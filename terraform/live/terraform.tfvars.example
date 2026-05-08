@@ -1,0 +1,16 @@
+# Copy to terraform.tfvars and fill in your actual public IP.
+# Get it with: (Invoke-WebRequest -Uri "https://api.ipify.org").Content
+
+name_prefix   = "gskplat"
+location      = "eastus2"
+owner         = "gopalskhandale@gmail.com"
+admin_ip_cidr = "1.2.3.4/32" # REPLACE with your real /32
+
+# Defaults are usually fine; uncomment to override:
+# vnet_cidr = "10.0.0.0/16"
+# subnet_cidrs = {
+#   aks  = "10.0.1.0/24"
+#   apps = "10.0.2.0/24"
+#   mgmt = "10.0.3.0/27"
+# }
+# log_analytics_retention_days = 30

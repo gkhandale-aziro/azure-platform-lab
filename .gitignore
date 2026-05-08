@@ -1,0 +1,37 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# tfvars contain secrets/IPs — gitignored, but commit *.example
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+
+# Provider lock files SHOULD be committed (not ignored)
+
+# Secrets
+*.pem
+*.key
+*.pfx
+*credentials*
+.env
+.env.*
+!.env.example
+sp-*.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

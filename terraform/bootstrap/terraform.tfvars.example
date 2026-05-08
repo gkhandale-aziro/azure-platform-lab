@@ -1,0 +1,9 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+
+name_prefix = "gskplat"
+location    = "eastus2"
+owner       = "gopalskhandale@gmail.com"
+
+extra_tags = {
+  CostCenter = "personal-lab"
+}
