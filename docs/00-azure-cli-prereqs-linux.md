@@ -154,11 +154,31 @@ terraform plan   # should show "Plan: 3 to add"
 
 If you see `AuthorizationFailed`, the env vars aren't set in this shell — re-run 6a or `source ~/.bashrc`.
 
-## 7. Future SP roles you'll need (flagged for later)
+## 7. Grant the SP `User Access Administrator` (needed for iteration 2)
 
-| Role | Scope | Why |
-|------|-------|-----|
-| `AcrPush` / `AcrPull` | ACR resource | Jenkins pushes images, AKS pulls |
-| `Azure Kubernetes Service Cluster Admin Role` | AKS cluster | kubectl admin from outside |
+Contributor lets the SP create resources but **does NOT grant `Microsoft.Authorization/roleAssignments/write`**. Iteration 2 has Terraform create role assignments (AKS kubelet → AcrPull on ACR; SP → Cluster Admin on AKS), so the SP needs that capability too. Add `User Access Administrator` (additive — keeps Contributor):
 
-Terraform will assign these in iteration 2 — Contributor at sub level is enough to delegate them.
+```bash
+SP_OBJECT_ID=$(az ad sp show --id "$ARM_CLIENT_ID" --query id -o tsv)
+
+az role assignment create \
+  --assignee-object-id "$SP_OBJECT_ID" \
+  --assignee-principal-type ServicePrincipal \
+  --role "User Access Administrator" \
+  --scope "/subscriptions/$ARM_SUBSCRIPTION_ID"
+```
+
+This step **must be run as your user account, not as the SP** — chicken-and-egg, an SP can't grant itself a higher role. If `az account show` reports `Type=servicePrincipal`, run `az login --use-device-code` first to get back to your user session.
+
+RBAC is eventually consistent. Wait 30–60 seconds before the next `terraform apply` to let the grant propagate.
+
+## 8. Future SP roles assigned by Terraform (flagged for awareness)
+
+Iteration 2 wires these automatically — no manual steps needed once step 7 is done:
+
+| Role | Granted to | Scope | Why |
+|------|------------|-------|-----|
+| `AcrPull` | AKS kubelet identity | ACR | So AKS can pull images from your registry |
+| `Azure Kubernetes Service Cluster Admin Role` | Terraform SP | AKS cluster | So kubectl works using SP creds (no device-code re-auth) |
+
+`AcrPush` for Jenkins comes in iteration 5 (CI pipeline).

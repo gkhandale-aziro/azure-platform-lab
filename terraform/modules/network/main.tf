@@ -1,5 +1,6 @@
 locals {
-  vnet_name = "${var.name_prefix}-vnet-${var.environment}"
+  vnet_name   = "${var.name_prefix}-vnet-${var.environment}"
+  module_tags = merge(var.tags, { Component = "network" })
 
   subnet_specs = {
     aks  = { name = "snet-aks", cidr = var.subnet_cidrs.aks }
@@ -13,7 +14,7 @@ resource "azurerm_virtual_network" "this" {
   location            = var.location
   resource_group_name = var.resource_group_name
   address_space       = [var.vnet_cidr]
-  tags                = var.tags
+  tags                = local.module_tags
 }
 
 # AKS subnet — kubenet means pods are NOT on the VNet, so this subnet only sizes nodes.
@@ -64,7 +65,7 @@ resource "azurerm_network_security_group" "aks" {
   name                = "${var.name_prefix}-nsg-aks-${var.environment}"
   location            = var.location
   resource_group_name = var.resource_group_name
-  tags                = var.tags
+  tags                = local.module_tags
 
   security_rule {
     name                       = "DenyAllInboundExplicit"
@@ -88,7 +89,7 @@ resource "azurerm_network_security_group" "apps" {
   name                = "${var.name_prefix}-nsg-apps-${var.environment}"
   location            = var.location
   resource_group_name = var.resource_group_name
-  tags                = var.tags
+  tags                = local.module_tags
 
   security_rule {
     name                       = "DenyAllInboundExplicit"
@@ -112,7 +113,7 @@ resource "azurerm_network_security_group" "mgmt" {
   name                = "${var.name_prefix}-nsg-mgmt-${var.environment}"
   location            = var.location
   resource_group_name = var.resource_group_name
-  tags                = var.tags
+  tags                = local.module_tags
 
   security_rule {
     name                       = "AllowSSHFromAdmin"

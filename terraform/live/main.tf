@@ -9,6 +9,10 @@ locals {
   }
 }
 
+# Identity Terraform is currently authenticated as. Used to grant the SP
+# Cluster Admin on AKS so kubectl works without device-code re-auth.
+data "azurerm_client_config" "current" {}
+
 resource "azurerm_resource_group" "main" {
   name     = "${var.name_prefix}-rg-platform"
   location = var.location
@@ -41,11 +45,52 @@ module "network" {
   tags = local.common_tags
 }
 
+module "acr" {
+  source = "../modules/acr"
+
+  name_prefix         = var.name_prefix
+  environment         = local.environment
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  sku                 = var.acr_sku
+
+  tags = local.common_tags
+}
+
+module "aks" {
+  source = "../modules/aks"
+
+  name_prefix         = var.name_prefix
+  environment         = local.environment
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+
+  subnet_id                  = module.network.subnet_ids.aks
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
+  admin_ip_cidr              = var.admin_ip_cidr
+
+  node_count         = var.aks_node_count
+  vm_size            = var.aks_vm_size
+  kubernetes_version = var.kubernetes_version
+
+  tags = local.common_tags
+}
+
+# AKS kubelet identity needs AcrPull so the cluster can pull images we push to ACR.
+resource "azurerm_role_assignment" "aks_acrpull" {
+  scope                = module.acr.id
+  role_definition_name = "AcrPull"
+  principal_id         = module.aks.kubelet_identity_object_id
+}
+
+# Terraform's SP gets cluster admin on AKS so kubectl works using SP creds (not device code).
+resource "azurerm_role_assignment" "tf_sp_cluster_admin" {
+  scope                = module.aks.id
+  role_definition_name = "Azure Kubernetes Service Cluster Admin Role"
+  principal_id         = data.azurerm_client_config.current.object_id
+}
+
 # ---------------------------------------------------------------------------
-# Coming in iteration 2:
-#   module "acr"      { ... }   # Azure Container Registry (Basic SKU)
-#   module "aks"      { ... }   # AKS cluster, B2s nodes, kubenet, OMS addon → LAW
-#
 # Coming in iteration 3 (Kubernetes manifests, not Terraform):
 #   - Istio install (kubernetes/istio)
 #   - ArgoCD install (kubernetes/argocd) — drift-detection mode

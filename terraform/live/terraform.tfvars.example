@@ -1,5 +1,6 @@
 # Copy to terraform.tfvars and fill in your actual public IP.
-# Get it with: (Invoke-WebRequest -Uri "https://api.ipify.org").Content
+# bash:       curl -s https://api.ipify.org
+# powershell: (Invoke-WebRequest -Uri "https://api.ipify.org").Content
 
 name_prefix   = "gskplat"
 location      = "eastus2"
@@ -14,3 +15,9 @@ admin_ip_cidr = "1.2.3.4/32" # REPLACE with your real /32
 #   mgmt = "10.0.3.0/27"
 # }
 # log_analytics_retention_days = 30
+
+# Iter 2 — ACR + AKS
+# acr_sku            = "Basic"           # Basic | Standard | Premium
+# aks_node_count     = 1                 # single-node lab default; B-series is blocked here, D2s_v3 is 2 vCPU/8 GB
+# aks_vm_size        = "Standard_D2s_v3"
+# kubernetes_version = null              # null = AKS picks latest stable

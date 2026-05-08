@@ -30,8 +30,8 @@ resource "azurerm_storage_account" "tfstate" {
   account_replication_type = "LRS"
   account_kind             = "StorageV2"
 
-  min_tls_version           = "TLS1_2"
-  shared_access_key_enabled = true # required for the azurerm Terraform backend
+  min_tls_version               = "TLS1_2"
+  shared_access_key_enabled     = true # required for the azurerm Terraform backend
   public_network_access_enabled = true # lab convenience; lock down with network_rules in prod
 
   blob_properties {

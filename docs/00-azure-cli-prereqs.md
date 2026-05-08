@@ -133,18 +133,36 @@ terraform -chdir=terraform/bootstrap plan
 
 If you see `Acquiring state lock... Plan: N to add` you're good. If you see `AuthorizationFailed`, the env vars aren't set in this shell.
 
-## 7. Granting the SP extra roles you'll need later
+## 7. Grant the SP `User Access Administrator` (needed for iteration 2)
 
-These aren't needed for iteration 1 (bootstrap + network), but flagging now so you don't get blocked later:
+Contributor lets the SP create resources but **does NOT grant `Microsoft.Authorization/roleAssignments/write`**. Iteration 2 has Terraform create role assignments (AKS kubelet → AcrPull on ACR; SP → Cluster Admin on AKS), so the SP needs that capability too. Add `User Access Administrator` (additive — keeps Contributor):
 
-| Role                              | Scope                | Why                                                              |
-| --------------------------------- | -------------------- | ---------------------------------------------------------------- |
-| `AcrPush` / `AcrPull`             | ACR resource         | Jenkins pushes images, AKS pulls them                            |
-| `Azure Kubernetes Service Cluster Admin Role` | AKS cluster | kubectl admin from local machine                                 |
-| `Key Vault Secrets User`          | Key Vault (optional) | If you add Key Vault CSI later                                   |
+```powershell
+$spObjectId = (az ad sp show --id $env:ARM_CLIENT_ID --query id -o tsv)
 
-Terraform will assign most of these automatically when those modules land. The Contributor role from step 6 covers role assignment itself.
+az role assignment create `
+  --assignee-object-id $spObjectId `
+  --assignee-principal-type ServicePrincipal `
+  --role "User Access Administrator" `
+  --scope "/subscriptions/$env:ARM_SUBSCRIPTION_ID"
+```
+
+This step **must be run as your user account, not as the SP** — an SP can't grant itself a higher role. If `az account show` reports `Type=servicePrincipal`, run `az login` first to get back to your user session.
+
+RBAC is eventually consistent. Wait 30–60 seconds before the next `terraform apply` to let the grant propagate.
+
+## 8. Roles Terraform assigns automatically in iteration 2
+
+No manual action needed once step 7 is done:
+
+| Role                                          | Granted to            | Scope        | Why                                                      |
+| --------------------------------------------- | --------------------- | ------------ | -------------------------------------------------------- |
+| `AcrPull`                                     | AKS kubelet identity  | ACR          | So AKS can pull images from your registry                |
+| `Azure Kubernetes Service Cluster Admin Role` | Terraform SP          | AKS cluster  | So kubectl works using SP creds (no device-code re-auth) |
+| `Key Vault Secrets User` (future, optional)   | TBD                   | Key Vault    | If you add Key Vault CSI later                           |
+
+`AcrPush` for Jenkins comes in iteration 5 (CI pipeline).
 
 ---
 
-**Once steps 1-6 are green, you're ready to apply the bootstrap config.** See the root `README.md` for the run order.
+**Once steps 1-7 are green, you're ready to apply the bootstrap config.** See the root `README.md` for the run order.

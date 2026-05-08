@@ -8,7 +8,7 @@ Hands-on lab to deploy a 3-tier app (React + Node/Express + PostgreSQL) on **AKS
 | --- | --- |
 | Cloud | Azure (Free Trial, $200 credit, East US 2) |
 | IaC | Terraform 1.5+ / azurerm provider ~> 3.0 |
-| Cluster | AKS, kubenet, 2x Standard_B2s, public API + IP allowlist |
+| Cluster | AKS, kubenet, 1x Standard_D2s_v3 (B-series blocked by Free Trial SKU policy), public API + IP allowlist |
 | Registry | Azure Container Registry (Basic SKU) |
 | GitOps | ArgoCD (drift detection); Jenkins drives all deploys via `helm upgrade` |
 | Mesh | Istio (mTLS PERMISSIVE, ingress gateway) |
@@ -50,7 +50,7 @@ azure-platform-lab/
    cp terraform.tfvars.example terraform.tfvars
    # edit terraform.tfvars (set owner email)
    terraform init
-   terraform plan
+   terraform plan       # expect: Plan: 4 to add (RG, SA, container, random_string)
    terraform apply
    terraform output backend_init_command_live   # copy this command, you'll need it next
    ```
@@ -88,21 +88,24 @@ After iteration 1 you have: state storage, a platform RG, a shared LAW, a VNet w
 
 | State | Approx. monthly |
 | --- | --- |
-| Iteration 1 only (this commit) | < $1 |
-| Iteration 2 + cluster running 24/7 | ~$60 |
-| Iteration 2 + cluster scaled to 0 most of the time | ~$10–15 |
-| Full lab running 24/7 | ~$80–100 |
+| Iteration 1 only (network + LAW, no compute) | < $1 |
+| Iteration 2 + cluster running 24/7 | ~$75 (1× D2s_v3 + ACR + LB) |
+| Iteration 2 + `az aks stop` overnight/weekends | ~$20 |
+| Full lab running 24/7 | ~$90–110 |
 
-The single biggest lever is **scaling the AKS node pool to zero when you're not actively using it.** A 2-node B2s cluster burns ~$0.083/hr; left running 24/7 that's ~$60/mo. Use `az aks stop` / `az aks start` between sessions.
+The single biggest lever is **stopping the AKS cluster when you're not actively using it.** A D2s_v3 node burns ~$0.10/hr; left running 24/7 that's ~$70/mo. Use `az aks stop` / `az aks start` between sessions — control plane stays free either way.
 
 ## vCPU quota — the binding constraint
 
 Free Trial: **4 vCPU per region per VM family.**
 
-- 2x B2s = 4 vCPU = **at the cap**.
+- 1x D2s_v3 = 2 vCPU (current lab config) — half the cap, leaves room to scale to 2 nodes if needed.
+- 2x D2s_v3 = 4 vCPU = at the cap.
 - You cannot run a separate prod cluster simultaneously. That's why dev/prod are namespaces, not separate clusters.
 
-If you upgrade to Pay-as-you-go, the default is 10 vCPU (raisable on request).
+**SKU policy gotcha:** Free Trial subscriptions in some regions block B-series (and many others) via a SKU allowlist policy that's separate from quota. Quota says "how much you can use"; SKU policy says "what SKUs you can use at all." Check `az vm list-skus --location <region> --resource-type virtualMachines` if you hit "VM size X is not allowed in your subscription" errors.
+
+If you upgrade to Pay-as-you-go, the default is 10 vCPU (raisable on request) and the SKU allowlist relaxes too.
 
 ## Tagging convention
 

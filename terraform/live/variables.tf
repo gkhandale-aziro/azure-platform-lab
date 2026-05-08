@@ -54,3 +54,27 @@ variable "log_analytics_retention_days" {
   description = "Retention in days for the shared Log Analytics workspace."
   default     = 30
 }
+
+variable "acr_sku" {
+  type        = string
+  description = "ACR SKU. Basic for lab; Standard/Premium add features we don't use here."
+  default     = "Basic"
+}
+
+variable "aks_node_count" {
+  type        = number
+  description = "AKS default node pool size. Single-node lab default; bump to 2 if you have vCPU headroom and want HA scheduling."
+  default     = 1
+}
+
+variable "aks_vm_size" {
+  type        = string
+  description = "AKS node VM size. Standard_B2s is blocked by subscription SKU policy in this trial; Standard_D2s_v3 is the cheapest allowed equivalent (2 vCPU / 8 GB)."
+  default     = "Standard_D2s_v3"
+}
+
+variable "kubernetes_version" {
+  type        = string
+  description = "AKS Kubernetes version. null = AKS picks latest stable available in the region."
+  default     = null
+}
