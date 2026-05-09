@@ -1,0 +1,40 @@
+# ArgoCD Application — drift detection for the dev environment.
+#
+# DRIFT-DETECTION ONLY: syncPolicy has no `automated` block, so ArgoCD will
+# never auto-apply changes from Git. It just compares cluster state to Git
+# and shows "OutOfSync" when they diverge.
+#
+# In our HYBRID model, Jenkins is the source of truth for image tags. ArgoCD
+# will report "OutOfSync" after every Jenkins deploy because Jenkins overrides
+# image refs via `helm --set` (which doesn't go back into Git). That's the
+# intended signal — an operator reviews drift, doesn't auto-fix.
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: three-tier-dev
+  namespace: argocd
+  finalizers:
+    # Cascade-deletes the cluster resources when the Application is deleted.
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/gkhandale-aziro/azure-platform-lab.git
+    targetRevision: master
+    path: kubernetes/apps/three-tier
+    helm:
+      valueFiles:
+        - values-dev.yaml
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dev
+
+  # Manual sync — operator clicks "Sync" in UI to apply Git → cluster reconciliation.
+  # No automated block here = drift detection only.
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=false  # dev ns already exists with istio-injection label
+      - ApplyOutOfSyncOnly=true

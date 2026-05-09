@@ -29,6 +29,17 @@ terraform.rc
 !.env.example
 sp-*.json
 
+# Node.js (apps/) — committed: package.json, package-lock.json, source, configs
+apps/**/node_modules/
+apps/**/dist/
+apps/**/coverage/
+apps/**/.npm/
+apps/**/npm-debug.log*
+
+# Helm dependency caches — chart deps are inline at charts/, not vendored tarballs
+kubernetes/apps/three-tier/Chart.lock
+kubernetes/apps/three-tier/charts/*.tgz
+
 # OS / editor
 .DS_Store
 Thumbs.db

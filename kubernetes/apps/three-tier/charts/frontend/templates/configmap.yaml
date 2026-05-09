@@ -1,3 +1,4 @@
+{{- if .Values.useConfigMapHTML }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -15,3 +16,4 @@ data:
         <p>Backend at: <code>http://backend.{{ .Release.Namespace }}.svc.cluster.local:5678/</code></p>
       </body>
     </html>
+{{- end }}

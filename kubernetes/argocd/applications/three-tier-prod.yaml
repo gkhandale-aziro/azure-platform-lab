@@ -1,0 +1,29 @@
+# ArgoCD Application — drift detection for the prod environment.
+# Same drift-only model as three-tier-dev.yaml; different namespace + values file.
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: three-tier-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/gkhandale-aziro/azure-platform-lab.git
+    targetRevision: master
+    path: kubernetes/apps/three-tier
+    helm:
+      valueFiles:
+        - values-prod.yaml
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: prod
+
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=false
+      - ApplyOutOfSyncOnly=true

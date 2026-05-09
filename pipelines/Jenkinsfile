@@ -1,0 +1,282 @@
+// Declarative pipeline for the three-tier app.
+//
+// Stages mirror the iter-plan: unit test → lint → secret scan → build → trivy → push →
+// deploy dev → e2e → deploy prod. Runs on Kubernetes-plugin agent pods that
+// spin up per build and tear down after.
+//
+// Prereqs (one-time, see kubernetes/jenkins/setup-acr-secret.md):
+//   - jenkins ServiceAccount has the rbac.yaml ClusterRole bound
+//   - jenkins ns has secret `acr-docker-config` (docker-config-json for kaniko)
+//   - This Jenkinsfile lives in the repo and is selected via the Jenkins job's "Pipeline from SCM" config
+
+pipeline {
+  agent {
+    kubernetes {
+      yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  serviceAccountName: jenkins
+  # Multi-container agent pod. Each stage uses container('<name>') to pick its tool.
+  containers:
+    - name: node
+      image: node:20-alpine
+      command: [cat]
+      tty: true
+      resources:
+        requests: { cpu: 100m, memory: 256Mi }
+        limits:   { cpu: 500m, memory: 512Mi }
+    - name: kaniko
+      image: gcr.io/kaniko-project/executor:v1.23.2-debug
+      command: [cat]
+      tty: true
+      volumeMounts:
+        - name: docker-config
+          mountPath: /kaniko/.docker
+      resources:
+        requests: { cpu: 100m, memory: 256Mi }
+        limits:   { cpu: 500m, memory: 1Gi }
+    - name: helm
+      image: alpine/k8s:1.30.6
+      command: [cat]
+      tty: true
+      resources:
+        requests: { cpu: 50m, memory: 128Mi }
+        limits:   { cpu: 200m, memory: 256Mi }
+    - name: trivy
+      image: aquasec/trivy:0.58.0
+      command: [cat]
+      tty: true
+      resources:
+        requests: { cpu: 50m, memory: 256Mi }
+        limits:   { cpu: 300m, memory: 512Mi }
+    - name: gitleaks
+      image: zricethezav/gitleaks:latest
+      command: [cat]
+      tty: true
+      resources:
+        requests: { cpu: 30m, memory: 64Mi }
+        limits:   { cpu: 100m, memory: 128Mi }
+  volumes:
+    - name: docker-config
+      secret:
+        secretName: acr-docker-config
+        items:
+          - key: .dockerconfigjson
+            path: config.json
+"""
+    }
+  }
+
+  environment {
+    ACR_LOGIN_SERVER = 'gskplatacrn73d5y.azurecr.io'
+    BACKEND_IMAGE    = "${ACR_LOGIN_SERVER}/three-tier/backend"
+    FRONTEND_IMAGE   = "${ACR_LOGIN_SERVER}/three-tier/frontend"
+    BUILD_TAG        = "build-${env.BUILD_NUMBER}"
+    CHART_PATH       = "kubernetes/apps/three-tier"
+  }
+
+  options {
+    timeout(time: 30, unit: 'MINUTES')
+    timestamps()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+  }
+
+  stages {
+    stage('Backend tests') {
+      steps {
+        container('node') {
+          dir('apps/backend') {
+            sh '''
+              npm ci --no-audit --no-fund
+              npm test
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Frontend tests') {
+      steps {
+        container('node') {
+          dir('apps/frontend') {
+            sh '''
+              npm ci --no-audit --no-fund
+              npm test
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Lint') {
+      parallel {
+        stage('Backend lint') {
+          steps {
+            container('node') {
+              dir('apps/backend') { sh 'npm run lint' }
+            }
+          }
+        }
+        stage('Frontend lint') {
+          steps {
+            container('node') {
+              dir('apps/frontend') { sh 'npm run lint' }
+            }
+          }
+        }
+      }
+    }
+
+    stage('Secret scan') {
+      steps {
+        container('gitleaks') {
+          // Fail the build if secrets are committed; --no-banner keeps logs tidy.
+          sh 'gitleaks detect --source=. --no-banner --redact'
+        }
+      }
+    }
+
+    stage('Build & push images') {
+      parallel {
+        stage('Backend image') {
+          steps {
+            container('kaniko') {
+              sh """
+                /kaniko/executor \\
+                  --context=\$(pwd)/apps/backend \\
+                  --dockerfile=apps/backend/Dockerfile \\
+                  --destination=${BACKEND_IMAGE}:${BUILD_TAG} \\
+                  --destination=${BACKEND_IMAGE}:latest \\
+                  --snapshot-mode=redo \\
+                  --cleanup
+              """
+            }
+          }
+        }
+        stage('Frontend image') {
+          steps {
+            container('kaniko') {
+              sh """
+                /kaniko/executor \\
+                  --context=\$(pwd)/apps/frontend \\
+                  --dockerfile=apps/frontend/Dockerfile \\
+                  --destination=${FRONTEND_IMAGE}:${BUILD_TAG} \\
+                  --destination=${FRONTEND_IMAGE}:latest \\
+                  --snapshot-mode=redo \\
+                  --cleanup
+              """
+            }
+          }
+        }
+      }
+    }
+
+    stage('Trivy image scan') {
+      parallel {
+        stage('Scan backend') {
+          steps {
+            container('trivy') {
+              // Fail on HIGH/CRITICAL with a fix available; we tolerate everything else for the lab.
+              sh "trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 ${BACKEND_IMAGE}:${BUILD_TAG}"
+            }
+          }
+        }
+        stage('Scan frontend') {
+          steps {
+            container('trivy') {
+              sh "trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 ${FRONTEND_IMAGE}:${BUILD_TAG}"
+            }
+          }
+        }
+      }
+    }
+
+    stage('Deploy dev') {
+      steps {
+        container('helm') {
+          sh """
+            helm upgrade --install three-tier ${CHART_PATH} \\
+              --namespace dev \\
+              --values ${CHART_PATH}/values-dev.yaml \\
+              --set frontend.image.repository=${FRONTEND_IMAGE} \\
+              --set frontend.image.tag=${BUILD_TAG} \\
+              --set frontend.useConfigMapHTML=false \\
+              --set backend.image.repository=${BACKEND_IMAGE} \\
+              --set backend.image.tag=${BUILD_TAG} \\
+              --set backend.useEchoArgs=false \\
+              --set backend.env.APP_ENV=dev \\
+              --set backend.env.APP_VERSION=${BUILD_TAG} \\
+              --wait --timeout 5m
+          """
+        }
+      }
+    }
+
+    stage('E2E tests on dev') {
+      steps {
+        container('helm') {
+          sh """
+            # Hit the backend through the in-cluster Service. If iter 5 has wired Istio
+            # routing fully, this could also go via the gateway with a Host header.
+            for i in 1 2 3 4 5; do
+              if kubectl run e2e-\$BUILD_NUMBER --rm -i --restart=Never -n dev \\
+                   --image=curlimages/curl --command -- \\
+                   curl -fsS -m 5 http://backend:5678/health; then
+                echo "e2e: backend healthy"
+                exit 0
+              fi
+              echo "e2e attempt \$i failed; sleeping"
+              sleep 5
+            done
+            echo "e2e: backend unhealthy after 5 attempts"
+            exit 1
+          """
+        }
+      }
+    }
+
+    stage('Approve prod deploy') {
+      steps {
+        // Manual gate before prod.
+        timeout(time: 5, unit: 'MINUTES') {
+          input message: 'Promote to prod?', ok: 'Promote'
+        }
+      }
+    }
+
+    stage('Deploy prod') {
+      steps {
+        container('helm') {
+          sh """
+            helm upgrade --install three-tier ${CHART_PATH} \\
+              --namespace prod \\
+              --values ${CHART_PATH}/values-prod.yaml \\
+              --set frontend.image.repository=${FRONTEND_IMAGE} \\
+              --set frontend.image.tag=${BUILD_TAG} \\
+              --set frontend.useConfigMapHTML=false \\
+              --set backend.image.repository=${BACKEND_IMAGE} \\
+              --set backend.image.tag=${BUILD_TAG} \\
+              --set backend.useEchoArgs=false \\
+              --set backend.env.APP_ENV=prod \\
+              --set backend.env.APP_VERSION=${BUILD_TAG} \\
+              --wait --timeout 5m
+          """
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      echo "Pipeline succeeded. Image tag: ${BUILD_TAG}"
+    }
+    failure {
+      echo "Pipeline failed at stage: ${env.STAGE_NAME}"
+    }
+    always {
+      // Cleanup workspace to keep agent pod disk usage tidy.
+      cleanWs()
+    }
+  }
+}

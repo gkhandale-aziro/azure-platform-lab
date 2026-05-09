@@ -5,10 +5,20 @@ image:
 
 replicaCount: 1
 
+# Placeholder mode: pass http-echo's `-text` and `-listen` args. When the pipeline
+# swaps in a real Node/Express image, set useEchoArgs: false so the image's own
+# CMD runs (CMD ["node", "server.js"]).
+useEchoArgs: true
 echoMessage: "backend response"
 
 service:
-  port: 5678  # http-echo's default
+  port: 5678  # http-echo default; the real Node backend also listens here (via PORT env)
+
+# Extra environment variables passed to the container — used by the real Node backend
+# to populate APP_ENV / APP_VERSION etc. Ignored by http-echo placeholder.
+env: {}
+  # APP_ENV: dev
+  # APP_VERSION: "build-1"
 
 resources:
   requests: { cpu: 50m, memory: 64Mi }

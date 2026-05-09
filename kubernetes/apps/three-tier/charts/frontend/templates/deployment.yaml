@@ -27,9 +27,11 @@ spec:
           ports:
             - containerPort: 80
               name: http
+          {{- if .Values.useConfigMapHTML }}
           volumeMounts:
             - name: html
               mountPath: /usr/share/nginx/html
+          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           readinessProbe:
@@ -38,7 +40,9 @@ spec:
               port: 80
             initialDelaySeconds: 2
             periodSeconds: 5
+      {{- if .Values.useConfigMapHTML }}
       volumes:
         - name: html
           configMap:
             name: frontend-html
+      {{- end }}

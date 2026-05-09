@@ -5,6 +5,10 @@ image:
 
 replicaCount: 1
 
+# Placeholder mode: serve a static HTML rendered into a ConfigMap (used in iter 4
+# with the public nginx image). When the pipeline swaps in a real frontend image
+# from ACR, set useConfigMapHTML: false so the image's baked-in dist/ is served.
+useConfigMapHTML: true
 greeting: "Hello from frontend"
 
 service:
