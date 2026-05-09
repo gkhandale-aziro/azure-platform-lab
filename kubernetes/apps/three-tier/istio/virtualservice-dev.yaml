@@ -6,8 +6,17 @@ metadata:
   name: three-tier-dev
   namespace: dev
 spec:
+  # Explicit hosts (no wildcard) so prod's "prod.gskplat.local" VS gets
+  # unambiguous priority. Includes "localhost" so a port-forward demo
+  # (browser sends Host: localhost) routes to dev without /etc/hosts edits.
+  # Istio strips ports from the authority before matching, so localhost:9999
+  # / localhost:59999 / etc. all collapse to "localhost".
   hosts:
     - "dev.gskplat.local"
+    # `lvh.me` is a public DNS service that resolves any subdomain to 127.0.0.1.
+    # Lets a port-forward demo work from a laptop browser without /etc/hosts edits:
+    #   http://dev.lvh.me:59999/ → SSH tunnel → port-forward → istio gateway → here.
+    - "dev.lvh.me"
   gateways:
     - istio-system/three-tier-gateway
   http:

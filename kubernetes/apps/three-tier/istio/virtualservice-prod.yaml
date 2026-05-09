@@ -7,6 +7,8 @@ metadata:
 spec:
   hosts:
     - "prod.gskplat.local"
+    # See dev VS for why lvh.me — http://prod.lvh.me:59999/ for browser access.
+    - "prod.lvh.me"
   gateways:
     - istio-system/three-tier-gateway
   http:
