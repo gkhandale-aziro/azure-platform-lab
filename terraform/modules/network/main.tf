@@ -67,6 +67,35 @@ resource "azurerm_network_security_group" "aks" {
   resource_group_name = var.resource_group_name
   tags                = local.module_tags
 
+  # Allow VNet-internal traffic (pod-to-pod across nodes, kubelet, AKS control plane flows).
+  # Without this, our explicit Deny at 4000 would override the implicit AllowVnetInBound (65000).
+  security_rule {
+    name                       = "AllowVnetInbound"
+    priority                   = 1000
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "VirtualNetwork"
+    destination_address_prefix = "VirtualNetwork"
+  }
+
+  # Azure Load Balancer health probes + traffic come from the AzureLoadBalancer service tag,
+  # which is NOT inside VirtualNetwork. Without this, our explicit Deny at 4000 overrides
+  # Azure's implicit AllowAzureLoadBalancerInBound (65001) and probes fail, marking backends unhealthy.
+  security_rule {
+    name                       = "AllowAzureLoadBalancerInbound"
+    priority                   = 1100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "AzureLoadBalancer"
+    destination_address_prefix = "*"
+  }
+
   security_rule {
     name                       = "DenyAllInboundExplicit"
     priority                   = 4000
@@ -90,6 +119,33 @@ resource "azurerm_network_security_group" "apps" {
   location            = var.location
   resource_group_name = var.resource_group_name
   tags                = local.module_tags
+
+  security_rule {
+    name                       = "AllowVnetInbound"
+    priority                   = 1000
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "VirtualNetwork"
+    destination_address_prefix = "VirtualNetwork"
+  }
+
+  # Azure Load Balancer health probes + traffic come from the AzureLoadBalancer service tag,
+  # which is NOT inside VirtualNetwork. Without this, our explicit Deny at 4000 overrides
+  # Azure's implicit AllowAzureLoadBalancerInBound (65001) and probes fail, marking backends unhealthy.
+  security_rule {
+    name                       = "AllowAzureLoadBalancerInbound"
+    priority                   = 1100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "AzureLoadBalancer"
+    destination_address_prefix = "*"
+  }
 
   security_rule {
     name                       = "DenyAllInboundExplicit"
@@ -124,6 +180,33 @@ resource "azurerm_network_security_group" "mgmt" {
     source_port_range          = "*"
     destination_port_range     = "22"
     source_address_prefix      = var.admin_ip_cidr
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "AllowVnetInbound"
+    priority                   = 1000
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "VirtualNetwork"
+    destination_address_prefix = "VirtualNetwork"
+  }
+
+  # Azure Load Balancer health probes + traffic come from the AzureLoadBalancer service tag,
+  # which is NOT inside VirtualNetwork. Without this, our explicit Deny at 4000 overrides
+  # Azure's implicit AllowAzureLoadBalancerInBound (65001) and probes fail, marking backends unhealthy.
+  security_rule {
+    name                       = "AllowAzureLoadBalancerInbound"
+    priority                   = 1100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "AzureLoadBalancer"
     destination_address_prefix = "*"
   }
 

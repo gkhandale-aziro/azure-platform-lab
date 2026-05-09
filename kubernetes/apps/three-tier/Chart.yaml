@@ -1,0 +1,18 @@
+apiVersion: v2
+name: three-tier
+description: 3-tier app (React frontend + Node/Express backend + PostgreSQL) for the Azure platform lab
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+
+# Local-path subcharts. `helm install` picks these up automatically from the charts/ directory.
+dependencies:
+  - name: frontend
+    version: "0.1.0"
+    repository: "file://./charts/frontend"
+  - name: backend
+    version: "0.1.0"
+    repository: "file://./charts/backend"
+  - name: database
+    version: "0.1.0"
+    repository: "file://./charts/database"

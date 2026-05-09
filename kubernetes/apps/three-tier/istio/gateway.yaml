@@ -1,0 +1,18 @@
+# Single shared Istio Gateway. Lives in istio-system so both dev and prod
+# VirtualServices can attach to it via the cross-namespace selector.
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: three-tier-gateway
+  namespace: istio-system
+spec:
+  selector:
+    istio: ingress  # matches the istio-ingress gateway pod's labels
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "dev.gskplat.local"
+        - "prod.gskplat.local"

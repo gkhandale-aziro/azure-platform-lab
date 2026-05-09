@@ -1,0 +1,23 @@
+# Values for the istio/istiod chart.
+# Reference: https://artifacthub.io/packages/helm/istio-official/istiod
+#
+# Tuned down from defaults to fit a single-node 2 vCPU / 8 GB lab cluster.
+# Default istiod requests 500m CPU / 2 GiB memory which won't schedule on a
+# tight D2s_v3 alongside ArgoCD + Jenkins + system pods + the 3-tier app.
+
+pilot:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  autoscaleEnabled: false
+  replicaCount: 1
+
+# mTLS PERMISSIVE — sidecars accept BOTH plaintext and mTLS so we can roll
+# Istio out gradually without breaking workloads that don't have a sidecar yet.
+# We tighten to STRICT later by applying a PeerAuthentication policy.
+meshConfig:
+  enableTracing: false  # tracing wired up in iter 4 if we want it

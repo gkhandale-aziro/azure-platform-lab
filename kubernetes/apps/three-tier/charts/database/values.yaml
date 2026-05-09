@@ -1,0 +1,19 @@
+image:
+  repository: postgres
+  tag: "15-alpine"
+  pullPolicy: IfNotPresent
+
+database: appdb
+username: appuser
+password: "change-me"
+
+storage:
+  size: 1Gi
+  storageClass: managed-csi
+
+service:
+  port: 5432
+
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits:   { cpu: 250m, memory: 512Mi }

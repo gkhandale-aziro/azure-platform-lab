@@ -1,0 +1,27 @@
+# Routes Host: prod.gskplat.local through the shared Gateway to the prod frontend/backend.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: three-tier-prod
+  namespace: prod
+spec:
+  hosts:
+    - "prod.gskplat.local"
+  gateways:
+    - istio-system/three-tier-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /api/
+      rewrite:
+        uri: /
+      route:
+        - destination:
+            host: backend.prod.svc.cluster.local
+            port:
+              number: 5678
+    - route:
+        - destination:
+            host: frontend.prod.svc.cluster.local
+            port:
+              number: 80

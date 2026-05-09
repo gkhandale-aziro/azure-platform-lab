@@ -1,0 +1,12 @@
+# Base values for the three-tier umbrella chart.
+# Per-env overrides live in values-dev.yaml and values-prod.yaml.
+# Subcharts are addressed by their name (frontend, backend, database).
+
+frontend:
+  enabled: true
+
+backend:
+  enabled: true
+
+database:
+  enabled: true

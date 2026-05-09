@@ -1,0 +1,15 @@
+image:
+  repository: nginx
+  tag: alpine
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+greeting: "Hello from frontend"
+
+service:
+  port: 80
+
+resources:
+  requests: { cpu: 30m, memory: 32Mi }
+  limits:   { cpu: 100m, memory: 128Mi }

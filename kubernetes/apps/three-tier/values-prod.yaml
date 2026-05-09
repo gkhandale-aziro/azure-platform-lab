@@ -1,0 +1,36 @@
+# Prod environment values.
+# Applied via: helm upgrade --install three-tier ./kubernetes/apps/three-tier -n prod --values values-prod.yaml
+
+frontend:
+  image:
+    repository: nginx
+    tag: alpine
+  replicaCount: 1
+  greeting: "Hello from PROD"
+  resources:
+    requests: { cpu: 30m, memory: 32Mi }
+    limits:   { cpu: 100m, memory: 128Mi }
+
+backend:
+  image:
+    repository: hashicorp/http-echo
+    tag: "1.0"
+  replicaCount: 1
+  echoMessage: "backend response from prod"
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits:   { cpu: 200m, memory: 128Mi }
+
+database:
+  image:
+    repository: postgres
+    tag: "15-alpine"
+  database: appdb
+  username: appuser
+  password: "prod-superSecret-change-me"
+  storage:
+    size: 1Gi
+    storageClass: managed-csi
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 250m, memory: 512Mi }

@@ -1,0 +1,37 @@
+# Dev environment values.
+# Applied via: helm upgrade --install three-tier ./kubernetes/apps/three-tier -n dev --values values-dev.yaml
+
+frontend:
+  image:
+    repository: nginx
+    tag: alpine
+  replicaCount: 1
+  greeting: "Hello from DEV"
+  resources:
+    requests: { cpu: 30m, memory: 32Mi }
+    limits:   { cpu: 100m, memory: 128Mi }
+
+backend:
+  image:
+    repository: hashicorp/http-echo
+    tag: "1.0"
+  replicaCount: 1
+  echoMessage: "backend response from dev"
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits:   { cpu: 200m, memory: 128Mi }
+
+database:
+  image:
+    repository: postgres
+    tag: "15-alpine"
+  database: appdb
+  username: appuser
+  # Lab-only password. In iter 5 we wire Key Vault CSI / external secrets.
+  password: "dev-superSecret-change-me"
+  storage:
+    size: 1Gi
+    storageClass: managed-csi
+  resources:
+    requests: { cpu: 50m, memory: 256Mi }    # tight single-node budget; postgres idles fine at this
+    limits:   { cpu: 250m, memory: 512Mi }

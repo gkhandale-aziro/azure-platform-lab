@@ -1,0 +1,6 @@
+apiVersion: v2
+name: frontend
+description: nginx-based placeholder frontend; iter 5 swaps this for a real React build pushed to ACR
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

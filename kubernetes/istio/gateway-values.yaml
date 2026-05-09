@@ -1,0 +1,23 @@
+# Values for the istio/gateway chart (the ingress gateway).
+# Reference: https://artifacthub.io/packages/helm/istio-official/gateway
+#
+# This creates the public LoadBalancer Service for the cluster.
+# Azure auto-provisions a public IP + standard LB in the AKS-managed RG.
+
+service:
+  type: LoadBalancer
+  # Azure-specific annotations could go here, e.g. to allowlist source IPs.
+  # For the lab we accept the world; auth/routing are enforced at the mesh layer.
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+autoscaling:
+  enabled: false
+
+replicaCount: 1

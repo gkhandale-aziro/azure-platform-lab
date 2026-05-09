@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-html
+  labels:
+    app: frontend
+data:
+  index.html: |
+    <!doctype html>
+    <html>
+      <head><title>three-tier lab</title></head>
+      <body style="font-family:sans-serif">
+        <h1>{{ .Values.greeting }}</h1>
+        <p>Frontend serving from namespace <code>{{ .Release.Namespace }}</code>.</p>
+        <p>Backend at: <code>http://backend.{{ .Release.Namespace }}.svc.cluster.local:5678/</code></p>
+      </body>
+    </html>

@@ -1,0 +1,28 @@
+# Routes Host: dev.gskplat.local through the shared Gateway to the dev frontend.
+# /api/* goes to the dev backend.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: three-tier-dev
+  namespace: dev
+spec:
+  hosts:
+    - "dev.gskplat.local"
+  gateways:
+    - istio-system/three-tier-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /api/
+      rewrite:
+        uri: /
+      route:
+        - destination:
+            host: backend.dev.svc.cluster.local
+            port:
+              number: 5678
+    - route:
+        - destination:
+            host: frontend.dev.svc.cluster.local
+            port:
+              number: 80

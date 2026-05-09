@@ -1,0 +1,48 @@
+# Values for the argo/argo-cd Helm chart.
+# Reference: https://artifacthub.io/packages/helm/argo/argo-cd
+#
+# This lab uses ArgoCD in DRIFT-DETECTION mode only — no auto-sync.
+# That's controlled per-Application later, not in this chart's config.
+# At chart level we just keep the install lean for an 8 GB single-node cluster.
+
+configs:
+  params:
+    # Disable HTTPS on the API server — we'll port-forward locally and
+    # the default HTTP→HTTPS redirect makes port-forward fiddly.
+    # Production would terminate TLS at the Istio gateway instead.
+    server.insecure: true
+
+server:
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits:   { cpu: 200m, memory: 256Mi }
+
+controller:
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+
+repoServer:
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits:   { cpu: 200m, memory: 256Mi }
+
+redis:
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits:   { cpu: 100m, memory: 128Mi }
+
+# Optional components disabled to save resources on this 2 vCPU / 8 GB node.
+# Re-enable individually if you need them:
+#   dex             — OIDC SSO (we use the local admin user instead)
+#   notifications   — Slack/email/etc on Application events
+#   applicationSet  — generators for many Apps from one template
+dex:
+  enabled: false
+notifications:
+  enabled: false
+applicationSet:
+  enabled: false

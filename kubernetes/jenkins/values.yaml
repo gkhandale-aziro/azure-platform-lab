@@ -1,0 +1,53 @@
+# Values for the jenkins/jenkins Helm chart.
+# Reference: https://artifacthub.io/packages/helm/jenkinsci/jenkins
+#
+# Lab setup: single controller, dynamic agents via the Kubernetes plugin.
+# Storage: 8 GiB PVC on the default AKS StorageClass (managed-csi → Azure Disk).
+
+controller:
+  # JVM heap. Default 2 GiB doesn't fit our budget; 1 GiB is enough for a lab Jenkins
+  # with a few jobs. Bump if you see OOMKilled.
+  javaOpts: "-Xms512m -Xmx1024m"
+
+  resources:
+    requests:
+      cpu: 100m       # very tight single-node budget after iter 4; limit can still burst to 1000m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+  # ServiceType ClusterIP — we'll port-forward for the UI now, route via Istio later.
+  serviceType: ClusterIP
+
+  # Pre-installed plugins. The defaults include kubernetes, git, workflow-aggregator,
+  # configuration-as-code, and others — enough for the iter 5 pipeline.
+  # Override only if you need extras.
+  installPlugins:
+    - kubernetes:latest
+    - workflow-aggregator:latest
+    - git:latest
+    - configuration-as-code:latest
+    - job-dsl:latest
+
+  # First-run admin user — credential is stored in a generated Secret (jenkins-admin).
+  # We rotate this in iter 5 when we wire Configuration-as-Code.
+  admin:
+    username: admin
+    # password is auto-generated; retrieve from the secret afterwards
+
+agent:
+  # Default agent image and resource shape for ephemeral build pods.
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+persistence:
+  enabled: true
+  storageClass: "managed-csi"  # AKS default — Azure Disk, ReadWriteOnce
+  size: 8Gi
+  accessMode: ReadWriteOnce

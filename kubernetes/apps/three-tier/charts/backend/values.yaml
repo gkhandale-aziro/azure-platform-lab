@@ -1,0 +1,15 @@
+image:
+  repository: hashicorp/http-echo
+  tag: "1.0"
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+echoMessage: "backend response"
+
+service:
+  port: 5678  # http-echo's default
+
+resources:
+  requests: { cpu: 50m, memory: 64Mi }
+  limits:   { cpu: 200m, memory: 128Mi }
