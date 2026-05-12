@@ -1,10 +1,10 @@
 # Multi-stage: install deps in builder, ship a slim runtime.
-FROM node:20-alpine AS deps
+FROM node:20-alpine3.22 AS deps
 WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev --no-audit --no-fund
 
-FROM node:20-alpine AS runtime
+FROM node:20-alpine3.22 AS runtime
 WORKDIR /app
 
 # Run as a non-root user. node:alpine ships a `node` user (uid 1000); use it.

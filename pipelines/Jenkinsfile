@@ -125,6 +125,11 @@ spec:
               }
             }
           }
+          post {
+            always {
+              junit testResults: 'apps/backend/junit.xml', allowEmptyResults: true
+            }
+          }
         }
         stage('Frontend tests + lint') {
           steps {
@@ -132,10 +137,15 @@ spec:
               dir('apps/frontend') {
                 sh '''
                   npm ci --no-audit --no-fund
-                  npm test
+                  npm test -- --reporter=verbose --reporter=junit --outputFile=junit.xml
                   npm run lint
                 '''
               }
+            }
+          }
+          post {
+            always {
+              junit testResults: 'apps/frontend/junit.xml', allowEmptyResults: true
             }
           }
         }
@@ -191,15 +201,38 @@ spec:
         stage('Scan backend') {
           steps {
             container('trivy') {
-              // Fail on HIGH/CRITICAL with a fix available; we tolerate everything else for the lab.
-              sh "trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 ${BACKEND_IMAGE}:${BUILD_TAG}"
+              sh """
+                trivy image --severity HIGH,CRITICAL --ignore-unfixed \
+                  --format table --output trivy-backend.txt \
+                  ${BACKEND_IMAGE}:${BUILD_TAG} || true
+                trivy image --severity HIGH,CRITICAL --ignore-unfixed \
+                  --exit-code 1 \
+                  ${BACKEND_IMAGE}:${BUILD_TAG}
+              """
+            }
+          }
+          post {
+            always {
+              archiveArtifacts artifacts: 'trivy-backend.txt', allowEmptyArchive: true
             }
           }
         }
         stage('Scan frontend') {
           steps {
             container('trivy') {
-              sh "trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 ${FRONTEND_IMAGE}:${BUILD_TAG}"
+              sh """
+                trivy image --severity HIGH,CRITICAL --ignore-unfixed \
+                  --format table --output trivy-frontend.txt \
+                  ${FRONTEND_IMAGE}:${BUILD_TAG} || true
+                trivy image --severity HIGH,CRITICAL --ignore-unfixed \
+                  --exit-code 1 \
+                  ${FRONTEND_IMAGE}:${BUILD_TAG}
+              """
+            }
+          }
+          post {
+            always {
+              archiveArtifacts artifacts: 'trivy-frontend.txt', allowEmptyArchive: true
             }
           }
         }
