@@ -19,7 +19,17 @@ spec:
   serviceAccountName: jenkins
   # Multi-container agent pod. Each stage uses container('<name>') to pick its tool.
   containers:
-    - name: node
+    - name: node-backend
+      image: node:20-alpine
+      command: [cat]
+      tty: true
+      resources:
+        requests: { cpu: 100m, memory: 256Mi }
+        limits:   { cpu: 500m, memory: 512Mi }
+      volumeMounts:
+        - name: npm-cache
+          mountPath: /root/.npm
+    - name: node-frontend
       image: node:20-alpine
       command: [cat]
       tty: true
@@ -63,6 +73,9 @@ spec:
       resources:
         requests: { cpu: 50m, memory: 256Mi }
         limits:   { cpu: 300m, memory: 512Mi }
+      volumeMounts:
+        - name: docker-config
+          mountPath: /root/.docker
     - name: gitleaks
       image: zricethezav/gitleaks:latest
       command: [cat]
@@ -102,7 +115,7 @@ spec:
       parallel {
         stage('Backend tests + lint') {
           steps {
-            container('node') {
+            container('node-backend') {
               dir('apps/backend') {
                 sh '''
                   npm ci --no-audit --no-fund
@@ -115,7 +128,7 @@ spec:
         }
         stage('Frontend tests + lint') {
           steps {
-            container('node') {
+            container('node-frontend') {
               dir('apps/frontend') {
                 sh '''
                   npm ci --no-audit --no-fund
