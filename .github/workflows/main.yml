@@ -1,0 +1,267 @@
+name: Three-Tier CI/CD
+
+on:
+  push:
+    branches: [master, feature/**]
+  pull_request:
+    branches: [master]
+
+env:
+  ACR_LOGIN_SERVER: gskplatacrn73d5y.azurecr.io
+  BACKEND_IMAGE: gskplatacrn73d5y.azurecr.io/three-tier/backend
+  FRONTEND_IMAGE: gskplatacrn73d5y.azurecr.io/three-tier/frontend
+  CHART_PATH: kubernetes/apps/three-tier
+
+jobs:
+  # ── CI checks (parallel) ──────────────────────────────────────────────────
+  backend-ci:
+    name: Backend tests + lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/backend/package-lock.json
+
+      - name: Install
+        working-directory: apps/backend
+        run: npm ci --no-audit --no-fund
+
+      - name: Test
+        working-directory: apps/backend
+        run: npm test
+
+      - name: Lint
+        working-directory: apps/backend
+        run: npm run lint
+
+  frontend-ci:
+    name: Frontend tests + lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
+
+      - name: Install
+        working-directory: apps/frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Test
+        working-directory: apps/frontend
+        run: npm test
+
+      - name: Lint
+        working-directory: apps/frontend
+        run: npm run lint
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Build & push images (parallel, depends on CI checks) ─────────────────
+  build-backend:
+    name: Build backend image
+    runs-on: ubuntu-latest
+    needs: [backend-ci, secret-scan]
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/feature/ci-jenkins-updates'
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: tag
+        run: echo "tag=build-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to ACR
+        uses: azure/docker-login@v2
+        with:
+          login-server: ${{ env.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_CLIENT_ID }}
+          password: ${{ secrets.ACR_CLIENT_SECRET }}
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/backend
+          push: true
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:${{ steps.tag.outputs.tag }}
+            ${{ env.BACKEND_IMAGE }}:latest
+          cache-from: type=registry,ref=${{ env.ACR_LOGIN_SERVER }}/cache/backend
+          cache-to: type=registry,ref=${{ env.ACR_LOGIN_SERVER }}/cache/backend,mode=max
+
+  build-frontend:
+    name: Build frontend image
+    runs-on: ubuntu-latest
+    needs: [frontend-ci, secret-scan]
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/feature/ci-jenkins-updates'
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: tag
+        run: echo "tag=build-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to ACR
+        uses: azure/docker-login@v2
+        with:
+          login-server: ${{ env.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_CLIENT_ID }}
+          password: ${{ secrets.ACR_CLIENT_SECRET }}
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/frontend
+          push: true
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:${{ steps.tag.outputs.tag }}
+            ${{ env.FRONTEND_IMAGE }}:latest
+          cache-from: type=registry,ref=${{ env.ACR_LOGIN_SERVER }}/cache/frontend
+          cache-to: type=registry,ref=${{ env.ACR_LOGIN_SERVER }}/cache/frontend,mode=max
+
+  # ── Trivy scan (parallel, depends on both builds) ────────────────────────
+  trivy-scan:
+    name: Trivy image scan
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend]
+    strategy:
+      matrix:
+        include:
+          - image: backend
+            ref: ${{ needs.build-backend.outputs.image_tag }}
+          - image: frontend
+            ref: ${{ needs.build-frontend.outputs.image_tag }}
+    steps:
+      - name: Login to ACR
+        uses: azure/docker-login@v2
+        with:
+          login-server: ${{ env.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_CLIENT_ID }}
+          password: ${{ secrets.ACR_CLIENT_SECRET }}
+
+      - name: Scan ${{ matrix.image }}
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.ACR_LOGIN_SERVER }}/three-tier/${{ matrix.image }}:${{ matrix.ref }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+  # ── Deploy dev ────────────────────────────────────────────────────────────
+  deploy-dev:
+    name: Deploy dev
+    runs-on: ubuntu-latest
+    needs: [trivy-scan]
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set kubeconfig
+        uses: azure/k8s-set-context@v4
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBECONFIG }}
+
+      - name: Helm deploy dev
+        run: |
+          BUILD_TAG="build-${{ github.run_number }}"
+          helm upgrade --install three-tier ${{ env.CHART_PATH }} \
+            --namespace dev \
+            --values ${{ env.CHART_PATH }}/values-dev.yaml \
+            --set frontend.image.repository=${{ env.FRONTEND_IMAGE }} \
+            --set frontend.image.tag=${BUILD_TAG} \
+            --set frontend.useConfigMapHTML=false \
+            --set backend.image.repository=${{ env.BACKEND_IMAGE }} \
+            --set backend.image.tag=${BUILD_TAG} \
+            --set backend.useEchoArgs=false \
+            --set backend.env.APP_ENV=dev \
+            --set backend.env.APP_VERSION=${BUILD_TAG} \
+            --wait --timeout 5m
+
+  # ── E2E tests on dev ──────────────────────────────────────────────────────
+  e2e-dev:
+    name: E2E tests on dev
+    runs-on: ubuntu-latest
+    needs: [deploy-dev]
+    steps:
+      - name: Set kubeconfig
+        uses: azure/k8s-set-context@v4
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBECONFIG }}
+
+      - name: Health check backend
+        run: |
+          BUILD_TAG="build-${{ github.run_number }}"
+          for i in 1 2 3 4 5; do
+            if kubectl run e2e-${BUILD_TAG} --rm -i --restart=Never -n dev \
+                 --image=curlimages/curl --command -- \
+                 curl -fsS -m 5 http://backend:5678/health; then
+              echo "e2e: backend healthy"
+              exit 0
+            fi
+            echo "e2e attempt $i failed; sleeping"
+            sleep 5
+          done
+          echo "e2e: backend unhealthy after 5 attempts"
+          exit 1
+
+  # ── Manual approval gate ──────────────────────────────────────────────────
+  approve-prod:
+    name: Approve prod deploy
+    runs-on: ubuntu-latest
+    needs: [e2e-dev]
+    environment: prod  # GitHub environment with required reviewers = manual gate
+    steps:
+      - run: echo "Approved for prod"
+
+  # ── Deploy prod ───────────────────────────────────────────────────────────
+  deploy-prod:
+    name: Deploy prod
+    runs-on: ubuntu-latest
+    needs: [approve-prod]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set kubeconfig
+        uses: azure/k8s-set-context@v4
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBECONFIG }}
+
+      - name: Helm deploy prod
+        run: |
+          BUILD_TAG="build-${{ github.run_number }}"
+          helm upgrade --install three-tier ${{ env.CHART_PATH }} \
+            --namespace prod \
+            --values ${{ env.CHART_PATH }}/values-prod.yaml \
+            --set frontend.image.repository=${{ env.FRONTEND_IMAGE }} \
+            --set frontend.image.tag=${BUILD_TAG} \
+            --set frontend.useConfigMapHTML=false \
+            --set backend.image.repository=${{ env.BACKEND_IMAGE }} \
+            --set backend.image.tag=${BUILD_TAG} \
+            --set backend.useEchoArgs=false \
+            --set backend.env.APP_ENV=prod \
+            --set backend.env.APP_VERSION=${BUILD_TAG} \
+            --wait --timeout 5m

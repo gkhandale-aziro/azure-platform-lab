@@ -19,14 +19,37 @@ spec:
   serviceAccountName: jenkins
   # Multi-container agent pod. Each stage uses container('<name>') to pick its tool.
   containers:
-    - name: node
+    - name: node-backend
       image: node:20-alpine
       command: [cat]
       tty: true
       resources:
         requests: { cpu: 100m, memory: 256Mi }
         limits:   { cpu: 500m, memory: 512Mi }
-    - name: kaniko
+      volumeMounts:
+        - name: npm-cache
+          mountPath: /root/.npm
+    - name: node-frontend
+      image: node:20-alpine
+      command: [cat]
+      tty: true
+      resources:
+        requests: { cpu: 100m, memory: 256Mi }
+        limits:   { cpu: 500m, memory: 512Mi }
+      volumeMounts:
+        - name: npm-cache
+          mountPath: /root/.npm
+    - name: kaniko-backend
+      image: gcr.io/kaniko-project/executor:v1.23.2-debug
+      command: [cat]
+      tty: true
+      volumeMounts:
+        - name: docker-config
+          mountPath: /kaniko/.docker
+      resources:
+        requests: { cpu: 100m, memory: 256Mi }
+        limits:   { cpu: 500m, memory: 1Gi }
+    - name: kaniko-frontend
       image: gcr.io/kaniko-project/executor:v1.23.2-debug
       command: [cat]
       tty: true
@@ -50,6 +73,9 @@ spec:
       resources:
         requests: { cpu: 50m, memory: 256Mi }
         limits:   { cpu: 300m, memory: 512Mi }
+      volumeMounts:
+        - name: docker-config
+          mountPath: /root/.docker
     - name: gitleaks
       image: zricethezav/gitleaks:latest
       command: [cat]
@@ -64,6 +90,9 @@ spec:
         items:
           - key: .dockerconfigjson
             path: config.json
+    - name: npm-cache
+      persistentVolumeClaim:
+        claimName: npm-cache
 """
     }
   }
@@ -78,93 +107,78 @@ spec:
 
   options {
     timeout(time: 30, unit: 'MINUTES')
-    timestamps()
     buildDiscarder(logRotator(numToKeepStr: '20'))
   }
 
   stages {
-    stage('Backend tests') {
-      steps {
-        container('node') {
-          dir('apps/backend') {
-            sh '''
-              npm ci --no-audit --no-fund
-              npm test
-            '''
-          }
-        }
-      }
-    }
-
-    stage('Frontend tests') {
-      steps {
-        container('node') {
-          dir('apps/frontend') {
-            sh '''
-              npm ci --no-audit --no-fund
-              npm test
-            '''
-          }
-        }
-      }
-    }
-
-    stage('Lint') {
+    stage('CI checks') {
       parallel {
-        stage('Backend lint') {
+        stage('Backend tests + lint') {
           steps {
-            container('node') {
-              dir('apps/backend') { sh 'npm run lint' }
+            container('node-backend') {
+              dir('apps/backend') {
+                sh '''
+                  npm ci --no-audit --no-fund
+                  npm test
+                  npm run lint
+                '''
+              }
             }
           }
         }
-        stage('Frontend lint') {
+        stage('Frontend tests + lint') {
           steps {
-            container('node') {
-              dir('apps/frontend') { sh 'npm run lint' }
+            container('node-frontend') {
+              dir('apps/frontend') {
+                sh '''
+                  npm ci --no-audit --no-fund
+                  npm test
+                  npm run lint
+                '''
+              }
+            }
+          }
+        }
+        stage('Secret scan') {
+          steps {
+            container('gitleaks') {
+              sh 'gitleaks detect --source=. --no-banner --redact'
             }
           }
         }
       }
     }
 
-    stage('Secret scan') {
-      steps {
-        container('gitleaks') {
-          // Fail the build if secrets are committed; --no-banner keeps logs tidy.
-          sh 'gitleaks detect --source=. --no-banner --redact'
-        }
-      }
-    }
-
-    stage('Build & push images') {
+    stage('Build images') {
       parallel {
-        stage('Backend image') {
+        stage('Build backend image') {
           steps {
-            container('kaniko') {
+            container('kaniko-backend') {
               sh """
                 /kaniko/executor \\
                   --context=\$(pwd)/apps/backend \\
-                  --dockerfile=apps/backend/Dockerfile \\
+                  --dockerfile=\$(pwd)/apps/backend/Dockerfile \\
                   --destination=${BACKEND_IMAGE}:${BUILD_TAG} \\
                   --destination=${BACKEND_IMAGE}:latest \\
-                  --snapshot-mode=redo \\
-                  --cleanup
+                  --cache=true \\
+                  --cache-repo=${ACR_LOGIN_SERVER}/cache \\
+                  --snapshot-mode=redo
               """
             }
           }
         }
-        stage('Frontend image') {
+        stage('Build frontend image') {
           steps {
-            container('kaniko') {
+            container('kaniko-frontend') {
               sh """
                 /kaniko/executor \\
                   --context=\$(pwd)/apps/frontend \\
-                  --dockerfile=apps/frontend/Dockerfile \\
+                  --dockerfile=\$(pwd)/apps/frontend/Dockerfile \\
                   --destination=${FRONTEND_IMAGE}:${BUILD_TAG} \\
                   --destination=${FRONTEND_IMAGE}:latest \\
-                  --snapshot-mode=redo \\
-                  --cleanup
+                  --cache=true \\
+                  --cache-repo=${ACR_LOGIN_SERVER}/cache \\
+                  --snapshot-mode=redo
               """
             }
           }
@@ -275,8 +289,7 @@ spec:
       echo "Pipeline failed at stage: ${env.STAGE_NAME}"
     }
     always {
-      // Cleanup workspace to keep agent pod disk usage tidy.
-      cleanWs()
+      echo "Build ${BUILD_TAG} complete."
     }
   }
 }
