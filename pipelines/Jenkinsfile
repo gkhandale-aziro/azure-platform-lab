@@ -26,6 +26,9 @@ spec:
       resources:
         requests: { cpu: 100m, memory: 256Mi }
         limits:   { cpu: 500m, memory: 512Mi }
+      volumeMounts:
+        - name: npm-cache
+          mountPath: /root/.npm
     - name: kaniko
       image: gcr.io/kaniko-project/executor:v1.23.2-debug
       command: [cat]
@@ -64,6 +67,9 @@ spec:
         items:
           - key: .dockerconfigjson
             path: config.json
+    - name: npm-cache
+      persistentVolumeClaim:
+        claimName: npm-cache
 """
     }
   }
@@ -145,8 +151,9 @@ spec:
               --dockerfile=\$(pwd)/apps/backend/Dockerfile \\
               --destination=${BACKEND_IMAGE}:${BUILD_TAG} \\
               --destination=${BACKEND_IMAGE}:latest \\
-              --snapshot-mode=redo \\
-              --cleanup
+              --cache=true \\
+              --cache-repo=${ACR_LOGIN_SERVER}/cache \\
+              --snapshot-mode=redo
           """
         }
       }
@@ -161,8 +168,9 @@ spec:
               --dockerfile=\$(pwd)/apps/frontend/Dockerfile \\
               --destination=${FRONTEND_IMAGE}:${BUILD_TAG} \\
               --destination=${FRONTEND_IMAGE}:latest \\
-              --snapshot-mode=redo \\
-              --cleanup
+              --cache=true \\
+              --cache-repo=${ACR_LOGIN_SERVER}/cache \\
+              --snapshot-mode=redo
           """
         }
       }
