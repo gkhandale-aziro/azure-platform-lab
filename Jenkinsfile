@@ -145,9 +145,13 @@ pipeline {
               '''
             }
 
+            // Commit & push and record new commit for rollback if needed
             sh '''
+              PREV_COMMIT=$(git rev-parse --short HEAD || true)
               git add kubernetes/apps/three-tier/values-prod.yaml || true
               git commit -m "ci(prod): promote ${COMMIT_SHA}" --allow-empty || true
+              NEW_COMMIT=$(git rev-parse --short HEAD || true)
+              echo "$NEW_COMMIT" > .new_commit
               ORIG_URL=$(git remote get-url origin)
               if echo "$ORIG_URL" | grep -q "git@"; then HTTPS_URL=$(echo "$ORIG_URL" | sed -E 's/git@(.*):(.*)/https:\/\/\1\/\2/'); else HTTPS_URL="$ORIG_URL"; fi
               git push "https://${GIT_USER}:${GIT_PASS}@${HTTPS_URL#https://}" HEAD:${TARGET_BRANCH}
@@ -155,14 +159,33 @@ pipeline {
 
             withCredentials([string(credentialsId: 'ARGOCD_SERVER', variable: 'ARGOCD_SERVER'), string(credentialsId: 'ARGOCD_TOKEN', variable: 'ARGOCD_TOKEN')]) {
               sh '''
-                echo "Triggering ArgoCD sync for ${ARGOCD_APP_PROD}"
+                NEW_COMMIT=$(cat .new_commit || true)
+                echo "Triggering ArgoCD sync for ${ARGOCD_APP_PROD} (commit ${NEW_COMMIT})"
                 curl -s -k -X POST "https://${ARGOCD_SERVER}/api/v1/applications/${ARGOCD_APP_PROD}/sync" -H "Authorization: Bearer ${ARGOCD_TOKEN}" -H "Content-Type: application/json" -d '{"force":true}'
-                for i in {1..30}; do
-                  STATUS=$(curl -s -k -H "Authorization: Bearer ${ARGOCD_TOKEN}" https://${ARGOCD_SERVER}/api/v1/applications/${ARGOCD_APP_PROD} | jq -r .status.sync.status)
-                  echo "ArgoCD sync status: $STATUS"
-                  if [ "$STATUS" = "Synced" ]; then break; fi
+
+                # Wait for Synced + Healthy. If not achieved within timeout, revert the git change and re-sync (rollback)
+                for i in {1..60}; do
+                  APP_JSON=$(curl -s -k -H "Authorization: Bearer ${ARGOCD_TOKEN}" https://${ARGOCD_SERVER}/api/v1/applications/${ARGOCD_APP_PROD})
+                  STATUS=$(echo "$APP_JSON" | jq -r .status.sync.status)
+                  HEALTH=$(echo "$APP_JSON" | jq -r .status.health.status)
+                  echo "ArgoCD sync: $STATUS, health: $HEALTH"
+                  if [ "$STATUS" = "Synced" ] && [ "$HEALTH" = "Healthy" ]; then
+                    echo "Prod app is Synced and Healthy"
+                    exit 0
+                  fi
                   sleep 5
                 done
+
+                echo "Timed out waiting for Healthy Synced state; performing rollback (reverting commit ${NEW_COMMIT})"
+                # Create a revert commit and push
+                git revert --no-edit ${NEW_COMMIT} || true
+                git push "https://${GIT_USER}:${GIT_PASS}@${HTTPS_URL#https://}" HEAD:${TARGET_BRANCH} || true
+
+                # Trigger ArgoCD sync to apply rollback
+                curl -s -k -X POST "https://${ARGOCD_SERVER}/api/v1/applications/${ARGOCD_APP_PROD}/sync" -H "Authorization: Bearer ${ARGOCD_TOKEN}" -H "Content-Type: application/json" -d '{"force":true}' || true
+
+                echo "Rollback triggered; failing pipeline to draw attention"
+                exit 1
               '''
             }
           }
