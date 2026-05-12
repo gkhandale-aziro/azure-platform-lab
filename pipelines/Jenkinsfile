@@ -136,37 +136,34 @@ spec:
       }
     }
 
-    stage('Build & push images') {
-      parallel {
-        stage('Backend image') {
-          steps {
-            container('kaniko') {
-              sh """
-                /kaniko/executor \\
-                  --context=\$(pwd)/apps/backend \\
-                  --dockerfile=\$(pwd)/apps/backend/Dockerfile \\
-                  --destination=${BACKEND_IMAGE}:${BUILD_TAG} \\
-                  --destination=${BACKEND_IMAGE}:latest \\
-                  --snapshot-mode=redo \\
-                  --cleanup
-              """
-            }
-          }
+    stage('Build backend image') {
+      steps {
+        container('kaniko') {
+          sh """
+            /kaniko/executor \\
+              --context=\$(pwd)/apps/backend \\
+              --dockerfile=\$(pwd)/apps/backend/Dockerfile \\
+              --destination=${BACKEND_IMAGE}:${BUILD_TAG} \\
+              --destination=${BACKEND_IMAGE}:latest \\
+              --snapshot-mode=redo \\
+              --cleanup
+          """
         }
-        stage('Frontend image') {
-          steps {
-            container('kaniko') {
-              sh """
-                /kaniko/executor \\
-                  --context=\$(pwd)/apps/frontend \\
-                  --dockerfile=\$(pwd)/apps/frontend/Dockerfile \\
-                  --destination=${FRONTEND_IMAGE}:${BUILD_TAG} \\
-                  --destination=${FRONTEND_IMAGE}:latest \\
-                  --snapshot-mode=redo \\
-                  --cleanup
-              """
-            }
-          }
+      }
+    }
+
+    stage('Build frontend image') {
+      steps {
+        container('kaniko') {
+          sh """
+            /kaniko/executor \\
+              --context=\$(pwd)/apps/frontend \\
+              --dockerfile=\$(pwd)/apps/frontend/Dockerfile \\
+              --destination=${FRONTEND_IMAGE}:${BUILD_TAG} \\
+              --destination=${FRONTEND_IMAGE}:latest \\
+              --snapshot-mode=redo \\
+              --cleanup
+          """
         }
       }
     }
@@ -274,7 +271,7 @@ spec:
       echo "Pipeline failed at stage: ${env.STAGE_NAME}"
     }
     always {
-      deleteDir()
+      echo "Build ${BUILD_TAG} complete."
     }
   }
 }
