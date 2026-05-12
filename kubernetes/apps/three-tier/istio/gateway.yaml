@@ -16,3 +16,8 @@ spec:
       hosts:
         - "dev.gskplat.local"
         - "prod.gskplat.local"
+        # Wildcard so any other Host header (including localhost during
+        # port-forward demos) is accepted at the gateway. Routing to the
+        # right VirtualService is then determined by VirtualService.hosts:
+        # more-specific match wins; "*" is the dev fallback.
+        - "*"
