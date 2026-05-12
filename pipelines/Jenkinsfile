@@ -88,56 +88,40 @@ spec:
   }
 
   stages {
-    stage('Backend tests') {
-      steps {
-        container('node') {
-          dir('apps/backend') {
-            sh '''
-              npm ci --no-audit --no-fund
-              npm test
-            '''
-          }
-        }
-      }
-    }
-
-    stage('Frontend tests') {
-      steps {
-        container('node') {
-          dir('apps/frontend') {
-            sh '''
-              npm ci --no-audit --no-fund
-              npm test
-            '''
-          }
-        }
-      }
-    }
-
-    stage('Lint') {
+    stage('CI checks') {
       parallel {
-        stage('Backend lint') {
+        stage('Backend tests + lint') {
           steps {
             container('node') {
-              dir('apps/backend') { sh 'npm run lint' }
+              dir('apps/backend') {
+                sh '''
+                  npm ci --no-audit --no-fund
+                  npm test
+                  npm run lint
+                '''
+              }
             }
           }
         }
-        stage('Frontend lint') {
+        stage('Frontend tests + lint') {
           steps {
             container('node') {
-              dir('apps/frontend') { sh 'npm run lint' }
+              dir('apps/frontend') {
+                sh '''
+                  npm ci --no-audit --no-fund
+                  npm test
+                  npm run lint
+                '''
+              }
             }
           }
         }
-      }
-    }
-
-    stage('Secret scan') {
-      steps {
-        container('gitleaks') {
-          // Fail the build if secrets are committed; --no-banner keeps logs tidy.
-          sh 'gitleaks detect --source=. --no-banner --redact'
+        stage('Secret scan') {
+          steps {
+            container('gitleaks') {
+              sh 'gitleaks detect --source=. --no-banner --redact'
+            }
+          }
         }
       }
     }
