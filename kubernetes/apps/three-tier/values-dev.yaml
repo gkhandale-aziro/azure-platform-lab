@@ -1,37 +1,48 @@
-# Dev environment values.
-# Applied via: helm upgrade --install three-tier ./kubernetes/apps/three-tier -n dev --values values-dev.yaml
-
 frontend:
   image:
-    repository: nginx
-    tag: alpine
+    repository: gskplatacrn73d5y.azurecr.io/three-tier/frontend
+    tag: build-24
   replicaCount: 1
-  greeting: "Hello from DEV"
+  greeting: Hello from DEV
   resources:
-    requests: { cpu: 30m, memory: 32Mi }
-    limits:   { cpu: 100m, memory: 128Mi }
-
+    requests:
+      cpu: 30m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+  useConfigMapHTML: false
 backend:
   image:
-    repository: hashicorp/http-echo
-    tag: "1.0"
+    repository: gskplatacrn73d5y.azurecr.io/three-tier/backend
+    tag: build-24
   replicaCount: 1
-  echoMessage: "backend response from dev"
+  echoMessage: backend response from dev
   resources:
-    requests: { cpu: 50m, memory: 64Mi }
-    limits:   { cpu: 200m, memory: 128Mi }
-
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  useEchoArgs: false
+  env:
+    APP_ENV: dev
+    APP_VERSION: build-24
 database:
   image:
     repository: postgres
-    tag: "15-alpine"
+    tag: 15-alpine
   database: appdb
   username: appuser
-  # Lab-only password. In iter 5 we wire Key Vault CSI / external secrets.
-  password: "dev-superSecret-change-me"
+  password: dev-superSecret-change-me
   storage:
     size: 1Gi
     storageClass: managed-csi
   resources:
-    requests: { cpu: 50m, memory: 256Mi }    # tight single-node budget; postgres idles fine at this
-    limits:   { cpu: 250m, memory: 512Mi }
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi
