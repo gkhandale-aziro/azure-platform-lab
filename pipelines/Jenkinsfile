@@ -20,7 +20,7 @@ spec:
   # Multi-container agent pod. Each stage uses container('<name>') to pick its tool.
   containers:
     - name: node-backend
-      image: node:20-alpine
+      image: node:20-alpine3.22
       command: [cat]
       tty: true
       resources:
@@ -30,7 +30,7 @@ spec:
         - name: npm-cache
           mountPath: /root/.npm
     - name: node-frontend
-      image: node:20-alpine
+      image: node:20-alpine3.22
       command: [cat]
       tty: true
       resources:
@@ -206,14 +206,18 @@ spec:
         container('trivy') {
           sh """
             trivy image --severity HIGH,CRITICAL --ignore-unfixed \
+              --ignorefile .trivyignore \
               --format table --output trivy-backend.txt \
               ${BACKEND_IMAGE}:${BUILD_TAG} || true
             trivy image --severity HIGH,CRITICAL --ignore-unfixed \
+              --ignorefile .trivyignore \
               --format table --output trivy-frontend.txt \
               ${FRONTEND_IMAGE}:${BUILD_TAG} || true
             trivy image --severity HIGH,CRITICAL --ignore-unfixed \
+              --ignorefile .trivyignore \
               --exit-code 1 ${BACKEND_IMAGE}:${BUILD_TAG}
             trivy image --severity HIGH,CRITICAL --ignore-unfixed \
+              --ignorefile .trivyignore \
               --exit-code 1 ${FRONTEND_IMAGE}:${BUILD_TAG}
           """
         }
@@ -253,7 +257,7 @@ spec:
             # Hit the backend through the in-cluster Service. If iter 5 has wired Istio
             # routing fully, this could also go via the gateway with a Host header.
             for i in 1 2 3 4 5; do
-              if kubectl run e2e-\$BUILD_NUMBER --rm -i --restart=Never -n dev \\
+              if kubectl run e2e-${env.BUILD_NUMBER} --rm -i --restart=Never -n dev \\
                    --image=curlimages/curl --command -- \\
                    curl -fsS -m 5 http://backend:5678/health; then
                 echo "e2e: backend healthy"

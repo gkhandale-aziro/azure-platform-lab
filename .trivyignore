@@ -1,0 +1,14 @@
+# These CVEs are in npm's own bundled tooling (cross-spawn, glob, minimatch, tar)
+# inside /usr/local/lib/node_modules/npm — not in our app's production dependencies.
+# They are not exploitable from our application's attack surface.
+CVE-2024-21538
+CVE-2025-64756
+CVE-2026-26996
+CVE-2026-27903
+CVE-2026-27904
+CVE-2026-23745
+CVE-2026-23950
+CVE-2026-24842
+CVE-2026-26960
+CVE-2026-29786
+CVE-2026-31802
