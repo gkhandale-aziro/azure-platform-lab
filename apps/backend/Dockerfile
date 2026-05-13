@@ -5,7 +5,6 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 
 FROM node:20-alpine3.22 AS runtime
-RUN apk upgrade --no-cache
 WORKDIR /app
 
 # Run as a non-root user. node:alpine ships a `node` user (uid 1000); use it.

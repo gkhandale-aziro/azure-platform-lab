@@ -8,7 +8,6 @@ COPY src ./src
 RUN npm run build
 
 FROM nginx:1.28-alpine AS runtime
-RUN apk upgrade --no-cache
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 
