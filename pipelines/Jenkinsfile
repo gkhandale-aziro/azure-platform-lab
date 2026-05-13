@@ -202,44 +202,25 @@ spec:
     }
 
     stage('Trivy image scan') {
-      parallel {
-        stage('Scan backend') {
-          steps {
-            container('trivy') {
-              sh """
-                trivy image --severity HIGH,CRITICAL --ignore-unfixed \
-                  --format table --output trivy-backend.txt \
-                  ${BACKEND_IMAGE}:${BUILD_TAG} || true
-                trivy image --severity HIGH,CRITICAL --ignore-unfixed \
-                  --exit-code 1 \
-                  ${BACKEND_IMAGE}:${BUILD_TAG}
-              """
-            }
-          }
-          post {
-            always {
-              archiveArtifacts artifacts: 'trivy-backend.txt', allowEmptyArchive: true
-            }
-          }
+      steps {
+        container('trivy') {
+          sh """
+            trivy image --severity HIGH,CRITICAL --ignore-unfixed \
+              --format table --output trivy-backend.txt \
+              ${BACKEND_IMAGE}:${BUILD_TAG} || true
+            trivy image --severity HIGH,CRITICAL --ignore-unfixed \
+              --format table --output trivy-frontend.txt \
+              ${FRONTEND_IMAGE}:${BUILD_TAG} || true
+            trivy image --severity HIGH,CRITICAL --ignore-unfixed \
+              --exit-code 1 ${BACKEND_IMAGE}:${BUILD_TAG}
+            trivy image --severity HIGH,CRITICAL --ignore-unfixed \
+              --exit-code 1 ${FRONTEND_IMAGE}:${BUILD_TAG}
+          """
         }
-        stage('Scan frontend') {
-          steps {
-            container('trivy') {
-              sh """
-                trivy image --severity HIGH,CRITICAL --ignore-unfixed \
-                  --format table --output trivy-frontend.txt \
-                  ${FRONTEND_IMAGE}:${BUILD_TAG} || true
-                trivy image --severity HIGH,CRITICAL --ignore-unfixed \
-                  --exit-code 1 \
-                  ${FRONTEND_IMAGE}:${BUILD_TAG}
-              """
-            }
-          }
-          post {
-            always {
-              archiveArtifacts artifacts: 'trivy-frontend.txt', allowEmptyArchive: true
-            }
-          }
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'trivy-backend.txt,trivy-frontend.txt', allowEmptyArchive: true
         }
       }
     }
