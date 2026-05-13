@@ -12,6 +12,9 @@ on:
           - dev
           - prod
 
+permissions:
+  contents: write       # allow GITHUB_TOKEN to push commits back to repo
+
 env:
   ACR_LOGIN_SERVER: gskplatacrn73d5y.azurecr.io
   BACKEND_IMAGE: gskplatacrn73d5y.azurecr.io/three-tier/backend
@@ -184,7 +187,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GH_PAT }}
+          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Update values-dev.yaml
         run: |
           BUILD_TAG="build-${{ github.run_number }}"
@@ -237,7 +240,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GH_PAT }}
+          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Update values-prod.yaml
         run: |
           BUILD_TAG="build-${{ github.run_number }}"
