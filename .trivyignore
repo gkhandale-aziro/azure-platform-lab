@@ -1,6 +1,5 @@
-# These CVEs are in npm's own bundled tooling (cross-spawn, glob, minimatch, tar)
-# inside /usr/local/lib/node_modules/npm — not in our app's production dependencies.
-# They are not exploitable from our application's attack surface.
+# npm bundled tooling CVEs (cross-spawn, glob, minimatch, tar)
+# in /usr/local/lib/node_modules/npm — not our app's runtime deps.
 CVE-2024-21538
 CVE-2025-64756
 CVE-2026-26996
@@ -12,3 +11,16 @@ CVE-2026-24842
 CVE-2026-26960
 CVE-2026-29786
 CVE-2026-31802
+
+# nginx:1.28-alpine OS-level CVEs — fixes available in newer Alpine patch releases
+# not yet packaged. Accepted for lab; revisit when alpine updates land.
+CVE-2026-31789
+CVE-2026-28387
+CVE-2026-28388
+CVE-2026-28389
+CVE-2026-28390
+CVE-2026-33416
+CVE-2026-33636
+CVE-2026-40200
+CVE-2026-27135
+CVE-2026-22184
