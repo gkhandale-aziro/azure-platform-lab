@@ -184,10 +184,11 @@ jobs:
         with:
           version: "v3.14.0"
       - name: Set kubeconfig
-        uses: azure/k8s-set-context@v4
-        with:
-          method: kubeconfig
-          kubeconfig: ${{ secrets.KUBECONFIG }}
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+          kubectl config current-context
       - name: Helm deploy dev
         run: |
           BUILD_TAG="build-${{ github.run_number }}"
@@ -210,10 +211,11 @@ jobs:
     needs: [deploy-dev]
     steps:
       - name: Set kubeconfig
-        uses: azure/k8s-set-context@v4
-        with:
-          method: kubeconfig
-          kubeconfig: ${{ secrets.KUBECONFIG }}
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+          kubectl config current-context
       - name: Health check backend
         run: |
           BUILD_TAG="build-${{ github.run_number }}"
@@ -249,10 +251,11 @@ jobs:
         with:
           version: "v3.14.0"
       - name: Set kubeconfig
-        uses: azure/k8s-set-context@v4
-        with:
-          method: kubeconfig
-          kubeconfig: ${{ secrets.KUBECONFIG }}
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+          kubectl config current-context
       - name: Helm deploy prod
         run: |
           BUILD_TAG="build-${{ github.run_number }}"
