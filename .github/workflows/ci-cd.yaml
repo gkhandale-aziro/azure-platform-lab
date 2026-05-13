@@ -155,7 +155,7 @@ jobs:
           username: ${{ secrets.ACR_CLIENT_ID }}
           password: ${{ secrets.ACR_CLIENT_SECRET }}
       - name: Scan ${{ matrix.image }}
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.ACR_LOGIN_SERVER }}/three-tier/${{ matrix.image }}:${{ matrix.ref }}
           severity: HIGH,CRITICAL
