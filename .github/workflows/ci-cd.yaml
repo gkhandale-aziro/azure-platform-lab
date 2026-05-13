@@ -19,27 +19,22 @@ env:
   CHART_PATH: kubernetes/apps/three-tier
 
 jobs:
-  # ── CI checks (parallel) ──────────────────────────────────────────────────
   backend-ci:
     name: Backend tests + lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
           cache-dependency-path: apps/backend/package-lock.json
-
       - name: Install
         working-directory: apps/backend
         run: npm ci --no-audit --no-fund
-
       - name: Test
         working-directory: apps/backend
         run: npm test
-
       - name: Lint
         working-directory: apps/backend
         run: npm run lint
@@ -49,21 +44,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
           cache-dependency-path: apps/frontend/package-lock.json
-
       - name: Install
         working-directory: apps/frontend
         run: npm ci --no-audit --no-fund
-
       - name: Test
         working-directory: apps/frontend
         run: npm test
-
       - name: Lint
         working-directory: apps/frontend
         run: npm run lint
@@ -75,13 +66,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Gitleaks
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── Build & push images (parallel, depends on CI checks) ─────────────────
   build-backend:
     name: Build backend image
     runs-on: ubuntu-latest
@@ -90,33 +79,29 @@ jobs:
       image_tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
-
       - name: Set image tag
         id: tag
         run: echo "tag=build-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
-
       - name: Set up Docker Buildx
+        id: buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          driver: docker-container
-
       - name: Login to ACR
         uses: azure/docker-login@v2
         with:
           login-server: ${{ env.ACR_LOGIN_SERVER }}
           username: ${{ secrets.ACR_CLIENT_ID }}
           password: ${{ secrets.ACR_CLIENT_SECRET }}
-
       - name: Build and push backend
         uses: docker/build-push-action@v6
         with:
+          builder: ${{ steps.buildx.outputs.name }}
           context: apps/backend
           push: true
           tags: |
             ${{ env.BACKEND_IMAGE }}:${{ steps.tag.outputs.tag }}
             ${{ env.BACKEND_IMAGE }}:latest
-          cache-from: type=registry,ref=${{ env.ACR_LOGIN_SERVER }}/cache/backend
-          cache-to: type=registry,ref=${{ env.ACR_LOGIN_SERVER }}/cache/backend,mode=max
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
 
   build-frontend:
     name: Build frontend image
@@ -126,35 +111,30 @@ jobs:
       image_tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
-
       - name: Set image tag
         id: tag
         run: echo "tag=build-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
-
       - name: Set up Docker Buildx
+        id: buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          driver: docker-container
-
       - name: Login to ACR
         uses: azure/docker-login@v2
         with:
           login-server: ${{ env.ACR_LOGIN_SERVER }}
           username: ${{ secrets.ACR_CLIENT_ID }}
           password: ${{ secrets.ACR_CLIENT_SECRET }}
-
       - name: Build and push frontend
         uses: docker/build-push-action@v6
         with:
+          builder: ${{ steps.buildx.outputs.name }}
           context: apps/frontend
           push: true
           tags: |
             ${{ env.FRONTEND_IMAGE }}:${{ steps.tag.outputs.tag }}
             ${{ env.FRONTEND_IMAGE }}:latest
-          cache-from: type=registry,ref=${{ env.ACR_LOGIN_SERVER }}/cache/frontend
-          cache-to: type=registry,ref=${{ env.ACR_LOGIN_SERVER }}/cache/frontend,mode=max
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
 
-  # ── Trivy scan (parallel, depends on both builds) ────────────────────────
   trivy-scan:
     name: Trivy image scan
     runs-on: ubuntu-latest
@@ -167,13 +147,13 @@ jobs:
           - image: frontend
             ref: ${{ needs.build-frontend.outputs.image_tag }}
     steps:
+      - uses: actions/checkout@v4
       - name: Login to ACR
         uses: azure/docker-login@v2
         with:
           login-server: ${{ env.ACR_LOGIN_SERVER }}
           username: ${{ secrets.ACR_CLIENT_ID }}
           password: ${{ secrets.ACR_CLIENT_SECRET }}
-
       - name: Scan ${{ matrix.image }}
         uses: aquasecurity/trivy-action@0.28.0
         with:
@@ -184,7 +164,6 @@ jobs:
           format: table
           output: trivy-${{ matrix.image }}.txt
           exit-code: "0"
-
       - name: Upload trivy report
         if: always()
         uses: actions/upload-artifact@v4
@@ -193,7 +172,6 @@ jobs:
           path: trivy-${{ matrix.image }}.txt
           if-no-files-found: warn
 
-  # ── Deploy dev ────────────────────────────────────────────────────────────
   deploy-dev:
     name: Deploy dev
     runs-on: ubuntu-latest
@@ -201,13 +179,15 @@ jobs:
     environment: dev
     steps:
       - uses: actions/checkout@v4
-
+      - name: Install helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.14.0"
       - name: Set kubeconfig
         uses: azure/k8s-set-context@v4
         with:
           method: kubeconfig
           kubeconfig: ${{ secrets.KUBECONFIG }}
-
       - name: Helm deploy dev
         run: |
           BUILD_TAG="build-${{ github.run_number }}"
@@ -224,7 +204,6 @@ jobs:
             --set backend.env.APP_VERSION=${BUILD_TAG} \
             --wait --timeout 5m
 
-  # ── E2E tests on dev ──────────────────────────────────────────────────────
   e2e-dev:
     name: E2E tests on dev
     runs-on: ubuntu-latest
@@ -235,7 +214,6 @@ jobs:
         with:
           method: kubeconfig
           kubeconfig: ${{ secrets.KUBECONFIG }}
-
       - name: Health check backend
         run: |
           BUILD_TAG="build-${{ github.run_number }}"
@@ -252,29 +230,29 @@ jobs:
           echo "e2e: backend unhealthy after 5 attempts"
           exit 1
 
-  # ── Manual approval gate ──────────────────────────────────────────────────
   approve-prod:
     name: Approve prod deploy
     runs-on: ubuntu-latest
     needs: [e2e-dev]
-    environment: prod  # GitHub environment with required reviewers = manual gate
+    environment: prod
     steps:
       - run: echo "Approved for prod"
 
-  # ── Deploy prod ───────────────────────────────────────────────────────────
   deploy-prod:
     name: Deploy prod
     runs-on: ubuntu-latest
     needs: [approve-prod]
     steps:
       - uses: actions/checkout@v4
-
+      - name: Install helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.14.0"
       - name: Set kubeconfig
         uses: azure/k8s-set-context@v4
         with:
           method: kubeconfig
           kubeconfig: ${{ secrets.KUBECONFIG }}
-
       - name: Helm deploy prod
         run: |
           BUILD_TAG="build-${{ github.run_number }}"
