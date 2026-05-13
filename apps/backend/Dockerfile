@@ -1,8 +1,8 @@
 # Multi-stage: install deps in builder, ship a slim runtime.
 FROM node:20-alpine3.22 AS deps
 WORKDIR /app
-COPY package.json ./
-RUN npm install --omit=dev --no-audit --no-fund
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
 
 FROM node:20-alpine3.22 AS runtime
 WORKDIR /app
