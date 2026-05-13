@@ -32,9 +32,12 @@ spec:
     server: https://kubernetes.default.svc
     namespace: dev
 
-  # Manual sync — operator clicks "Sync" in UI to apply Git → cluster reconciliation.
-  # No automated block here = drift detection only.
+  # Auto-sync — GitHub Actions commits new image tags to values-dev.yaml,
+  # ArgoCD detects the Git change and applies it to the cluster.
   syncPolicy:
+    automated:
+      prune: false       # never delete resources removed from Git (safety)
+      selfHeal: true     # revert manual cluster changes back to Git state
     syncOptions:
       - CreateNamespace=false  # dev ns already exists with istio-injection label
       - ApplyOutOfSyncOnly=true

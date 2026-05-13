@@ -23,7 +23,12 @@ spec:
     server: https://kubernetes.default.svc
     namespace: prod
 
+  # Auto-sync for prod kicks in only AFTER the manual approval gate in GitHub Actions
+  # commits values-prod.yaml. ArgoCD then applies it.
   syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
     syncOptions:
       - CreateNamespace=false
       - ApplyOutOfSyncOnly=true
