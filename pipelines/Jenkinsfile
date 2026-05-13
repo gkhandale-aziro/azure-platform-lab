@@ -79,7 +79,7 @@ spec:
         - name: trivy-cache
           mountPath: /root/.cache/trivy
     - name: gitleaks
-      image: zricethezav/gitleaks:latest
+      image: zricethezav/gitleaks:v8.21.0
       command: [cat]
       tty: true
       resources:
@@ -259,7 +259,7 @@ spec:
             for i in 1 2 3 4 5; do
               if kubectl run e2e-${env.BUILD_NUMBER} --rm -i --restart=Never -n dev \\
                    --image=curlimages/curl --command -- \\
-                   curl -fsS -m 5 http://backend:5678/health; then
+                   curl -fsS -m 5 http://backend.dev.svc.cluster.local:5678/health; then
                 echo "e2e: backend healthy"
                 exit 0
               fi
