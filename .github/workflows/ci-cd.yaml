@@ -96,9 +96,11 @@ jobs:
         run: echo "tag=build-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
+        id: buildx
         uses: docker/setup-buildx-action@v3
         with:
           driver: docker-container
+          install: true
 
       - name: Login to ACR
         uses: azure/docker-login@v2
@@ -110,6 +112,7 @@ jobs:
       - name: Build and push backend
         uses: docker/build-push-action@v6
         with:
+          builder: ${{ steps.buildx.outputs.name }}
           context: apps/backend
           push: true
           tags: |
@@ -132,9 +135,11 @@ jobs:
         run: echo "tag=build-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
+        id: buildx
         uses: docker/setup-buildx-action@v3
         with:
           driver: docker-container
+          install: true
 
       - name: Login to ACR
         uses: azure/docker-login@v2
@@ -146,6 +151,7 @@ jobs:
       - name: Build and push frontend
         uses: docker/build-push-action@v6
         with:
+          builder: ${{ steps.buildx.outputs.name }}
           context: apps/frontend
           push: true
           tags: |
@@ -201,6 +207,11 @@ jobs:
     environment: dev
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.14.0"
 
       - name: Set kubeconfig
         uses: azure/k8s-set-context@v4
@@ -268,6 +279,11 @@ jobs:
     needs: [approve-prod]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.14.0"
 
       - name: Set kubeconfig
         uses: azure/k8s-set-context@v4
