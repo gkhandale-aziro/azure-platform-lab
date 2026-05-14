@@ -1,7 +1,7 @@
 frontend:
   image:
     repository: gskplatacrn73d5y.azurecr.io/three-tier/frontend
-    tag: sha-46fa90f
+    tag: sha-9b61859
   replicaCount: 1
   greeting: Hello from PROD
   resources:
@@ -14,15 +14,13 @@ frontend:
   useConfigMapHTML: false
   blueGreen:
     enabled: true
-    # Prod requires manual promote — no auto-promotion even if analysis passes.
-    # Operator must verify preview, then run `kubectl argo rollouts promote`.
     autoPromotionEnabled: false
     analysis:
       enabled: true
 backend:
   image:
     repository: gskplatacrn73d5y.azurecr.io/three-tier/backend
-    tag: sha-46fa90f
+    tag: sha-9b61859
   replicaCount: 1
   echoMessage: backend response from prod
   resources:
@@ -35,7 +33,7 @@ backend:
   useEchoArgs: false
   env:
     APP_ENV: prod
-    APP_VERSION: sha-46fa90f
+    APP_VERSION: sha-9b61859
   blueGreen:
     enabled: true
     autoPromotionEnabled: false
