@@ -22,6 +22,25 @@ env:
   CHART_PATH: kubernetes/apps/three-tier
 
 jobs:
+  # ── Resolve image tag once (git SHA) ──────────────────────────────────────
+  # Using the short git SHA as the immutable image tag means:
+  #   1. Same image SHA flows dev → prod (build once, deploy many)
+  #   2. Rolling back to commit X = rolling back to image X (trivial mapping)
+  #   3. Tag is immutable — never overwritten (BUILD_NUMBER could be reused on retry)
+  resolve-tag:
+    name: Resolve image tag (git SHA)
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compute short SHA
+        id: tag
+        run: |
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          echo "tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Computed tag: sha-${SHORT_SHA}"
+
   # ── CI checks (parallel) ──────────────────────────────────────────────────
   backend-ci:
     name: Backend tests + lint
@@ -79,14 +98,9 @@ jobs:
   build-backend:
     name: Build backend image
     runs-on: ubuntu-latest
-    needs: [backend-ci, secret-scan]
-    outputs:
-      image_tag: ${{ steps.tag.outputs.tag }}
+    needs: [backend-ci, secret-scan, resolve-tag]
     steps:
       - uses: actions/checkout@v4
-      - name: Set image tag
-        id: tag
-        run: echo "tag=build-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
       - name: Enable containerd image store
         run: |
           echo '{"features": {"containerd-snapshotter": true}}' | sudo tee /etc/docker/daemon.json
@@ -103,7 +117,7 @@ jobs:
           context: apps/backend
           push: true
           tags: |
-            ${{ env.BACKEND_IMAGE }}:${{ steps.tag.outputs.tag }}
+            ${{ env.BACKEND_IMAGE }}:${{ needs.resolve-tag.outputs.tag }}
             ${{ env.BACKEND_IMAGE }}:latest
           cache-from: type=gha,scope=backend
           cache-to: type=gha,scope=backend,mode=max
@@ -111,14 +125,9 @@ jobs:
   build-frontend:
     name: Build frontend image
     runs-on: ubuntu-latest
-    needs: [frontend-ci, secret-scan]
-    outputs:
-      image_tag: ${{ steps.tag.outputs.tag }}
+    needs: [frontend-ci, secret-scan, resolve-tag]
     steps:
       - uses: actions/checkout@v4
-      - name: Set image tag
-        id: tag
-        run: echo "tag=build-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
       - name: Enable containerd image store
         run: |
           echo '{"features": {"containerd-snapshotter": true}}' | sudo tee /etc/docker/daemon.json
@@ -135,7 +144,7 @@ jobs:
           context: apps/frontend
           push: true
           tags: |
-            ${{ env.FRONTEND_IMAGE }}:${{ steps.tag.outputs.tag }}
+            ${{ env.FRONTEND_IMAGE }}:${{ needs.resolve-tag.outputs.tag }}
             ${{ env.FRONTEND_IMAGE }}:latest
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,scope=frontend,mode=max
@@ -144,14 +153,10 @@ jobs:
   trivy-scan:
     name: Trivy image scan
     runs-on: ubuntu-latest
-    needs: [build-backend, build-frontend]
+    needs: [build-backend, build-frontend, resolve-tag]
     strategy:
       matrix:
-        include:
-          - image: backend
-            ref: ${{ needs.build-backend.outputs.image_tag }}
-          - image: frontend
-            ref: ${{ needs.build-frontend.outputs.image_tag }}
+        image: [backend, frontend]
     steps:
       - uses: actions/checkout@v4
       - name: Login to ACR
@@ -163,7 +168,7 @@ jobs:
       - name: Scan ${{ matrix.image }}
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.ACR_LOGIN_SERVER }}/three-tier/${{ matrix.image }}:${{ matrix.ref }}
+          image-ref: ${{ env.ACR_LOGIN_SERVER }}/three-tier/${{ matrix.image }}:${{ needs.resolve-tag.outputs.tag }}
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           trivyignores: .trivyignore
@@ -179,18 +184,20 @@ jobs:
           if-no-files-found: warn
 
   # ── Update dev image tags in Git → ArgoCD picks up & syncs ────────────────
+  # Dev is auto-promoted (no manual gate). If analysis passes, rollout completes.
   update-dev-tags:
     name: Update dev image tags
     runs-on: ubuntu-latest
-    needs: [trivy-scan]
+    needs: [trivy-scan, resolve-tag]
     environment: dev
     steps:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Update values-dev.yaml
+        env:
+          IMAGE_TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
-          BUILD_TAG="build-${{ github.run_number }}"
           VALUES_FILE=${{ env.CHART_PATH }}/values-dev.yaml
 
           python3 <<EOF
@@ -199,28 +206,28 @@ jobs:
               vals = yaml.safe_load(f)
           vals.setdefault("frontend", {}).setdefault("image", {})
           vals["frontend"]["image"]["repository"] = "${{ env.FRONTEND_IMAGE }}"
-          vals["frontend"]["image"]["tag"] = "$BUILD_TAG"
+          vals["frontend"]["image"]["tag"] = "$IMAGE_TAG"
           vals["frontend"]["useConfigMapHTML"] = False
           vals.setdefault("backend", {}).setdefault("image", {})
           vals["backend"]["image"]["repository"] = "${{ env.BACKEND_IMAGE }}"
-          vals["backend"]["image"]["tag"] = "$BUILD_TAG"
+          vals["backend"]["image"]["tag"] = "$IMAGE_TAG"
           vals["backend"]["useEchoArgs"] = False
           vals["backend"].setdefault("env", {})
           vals["backend"]["env"]["APP_ENV"] = "dev"
-          vals["backend"]["env"]["APP_VERSION"] = "$BUILD_TAG"
+          vals["backend"]["env"]["APP_VERSION"] = "$IMAGE_TAG"
           with open("$VALUES_FILE", "w") as f:
               yaml.safe_dump(vals, f, default_flow_style=False, sort_keys=False)
           EOF
-
           echo "=== Updated values-dev.yaml ==="
           cat $VALUES_FILE
       - name: Commit and push
+        env:
+          IMAGE_TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
-          BUILD_TAG="build-${{ github.run_number }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add ${{ env.CHART_PATH }}/values-dev.yaml
-          git commit -m "ci(dev): bump images to ${BUILD_TAG}" || echo "no changes"
+          git commit -m "ci(dev): bump images to ${IMAGE_TAG}" || echo "no changes"
           git pull --rebase origin master
           git push origin master
 
@@ -233,18 +240,21 @@ jobs:
     steps:
       - run: echo "Approved for prod"
 
-  # ── Update prod image tags in Git → ArgoCD syncs to prod ──────────────────
+  # ── Update prod image tags — SAME SHA as dev (image promotion) ────────────
+  # Build once, deploy many: the image we tested in dev is the exact same image
+  # (same digest, same scan results) that goes to prod. No rebuild.
   update-prod-tags:
     name: Update prod image tags
     runs-on: ubuntu-latest
-    needs: [approve-prod]
+    needs: [approve-prod, resolve-tag]
     steps:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Update values-prod.yaml
+        env:
+          IMAGE_TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
-          BUILD_TAG="build-${{ github.run_number }}"
           VALUES_FILE=${{ env.CHART_PATH }}/values-prod.yaml
 
           python3 <<EOF
@@ -253,27 +263,27 @@ jobs:
               vals = yaml.safe_load(f)
           vals.setdefault("frontend", {}).setdefault("image", {})
           vals["frontend"]["image"]["repository"] = "${{ env.FRONTEND_IMAGE }}"
-          vals["frontend"]["image"]["tag"] = "$BUILD_TAG"
+          vals["frontend"]["image"]["tag"] = "$IMAGE_TAG"
           vals["frontend"]["useConfigMapHTML"] = False
           vals.setdefault("backend", {}).setdefault("image", {})
           vals["backend"]["image"]["repository"] = "${{ env.BACKEND_IMAGE }}"
-          vals["backend"]["image"]["tag"] = "$BUILD_TAG"
+          vals["backend"]["image"]["tag"] = "$IMAGE_TAG"
           vals["backend"]["useEchoArgs"] = False
           vals["backend"].setdefault("env", {})
           vals["backend"]["env"]["APP_ENV"] = "prod"
-          vals["backend"]["env"]["APP_VERSION"] = "$BUILD_TAG"
+          vals["backend"]["env"]["APP_VERSION"] = "$IMAGE_TAG"
           with open("$VALUES_FILE", "w") as f:
               yaml.safe_dump(vals, f, default_flow_style=False, sort_keys=False)
           EOF
-
           echo "=== Updated values-prod.yaml ==="
           cat $VALUES_FILE
       - name: Commit and push
+        env:
+          IMAGE_TAG: ${{ needs.resolve-tag.outputs.tag }}
         run: |
-          BUILD_TAG="build-${{ github.run_number }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add ${{ env.CHART_PATH }}/values-prod.yaml
-          git commit -m "ci(prod): bump images to ${BUILD_TAG}" || echo "no changes"
+          git commit -m "ci(prod): promote images ${IMAGE_TAG}" || echo "no changes"
           git pull --rebase origin master
           git push origin master

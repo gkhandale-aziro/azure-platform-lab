@@ -14,7 +14,9 @@ frontend:
   useConfigMapHTML: false
   blueGreen:
     enabled: true
-    autoPromotionEnabled: false
+    # Dev auto-promotes: if analysis passes, green becomes active automatically.
+    # No human in the loop = fast developer feedback. Manual gates live in prod only.
+    autoPromotionEnabled: true
     analysis:
       enabled: true
 backend:
@@ -36,7 +38,7 @@ backend:
     APP_VERSION: build-30
   blueGreen:
     enabled: true
-    autoPromotionEnabled: false
+    autoPromotionEnabled: true
 database:
   image:
     repository: postgres
