@@ -1,7 +1,7 @@
 frontend:
   image:
     repository: gskplatacrn73d5y.azurecr.io/three-tier/frontend
-    tag: build-30
+    tag: sha-46fa90f
   replicaCount: 1
   greeting: Hello from DEV
   resources:
@@ -14,15 +14,13 @@ frontend:
   useConfigMapHTML: false
   blueGreen:
     enabled: true
-    # Dev auto-promotes: if analysis passes, green becomes active automatically.
-    # No human in the loop = fast developer feedback. Manual gates live in prod only.
     autoPromotionEnabled: true
     analysis:
       enabled: true
 backend:
   image:
     repository: gskplatacrn73d5y.azurecr.io/three-tier/backend
-    tag: build-30
+    tag: sha-46fa90f
   replicaCount: 1
   echoMessage: backend response from dev
   resources:
@@ -35,7 +33,7 @@ backend:
   useEchoArgs: false
   env:
     APP_ENV: dev
-    APP_VERSION: build-30
+    APP_VERSION: sha-46fa90f
   blueGreen:
     enabled: true
     autoPromotionEnabled: true
