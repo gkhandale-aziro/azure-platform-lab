@@ -1,7 +1,7 @@
 frontend:
   image:
     repository: gskplatacrn73d5y.azurecr.io/three-tier/frontend
-    tag: sha-46fa90f
+    tag: sha-9b61859
   replicaCount: 1
   greeting: Hello from DEV
   resources:
@@ -20,7 +20,7 @@ frontend:
 backend:
   image:
     repository: gskplatacrn73d5y.azurecr.io/three-tier/backend
-    tag: sha-46fa90f
+    tag: sha-9b61859
   replicaCount: 1
   echoMessage: backend response from dev
   resources:
@@ -33,7 +33,7 @@ backend:
   useEchoArgs: false
   env:
     APP_ENV: dev
-    APP_VERSION: sha-46fa90f
+    APP_VERSION: sha-9b61859
   blueGreen:
     enabled: true
     autoPromotionEnabled: true
