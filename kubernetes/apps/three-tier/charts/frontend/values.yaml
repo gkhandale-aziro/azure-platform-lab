@@ -22,6 +22,10 @@ service:
 blueGreen:
   enabled: false
   autoPromotionEnabled: false
+  # Prometheus-driven prePromotionAnalysis. Only set true after Prometheus is installed
+  # in the cluster at http://prometheus-kube-prometheus-prometheus.monitoring.svc:9090
+  analysis:
+    enabled: false
 
 resources:
   requests: { cpu: 30m, memory: 32Mi }

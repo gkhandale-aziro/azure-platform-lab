@@ -15,6 +15,8 @@ frontend:
   blueGreen:
     enabled: true
     autoPromotionEnabled: false
+    analysis:
+      enabled: true
 backend:
   image:
     repository: gskplatacrn73d5y.azurecr.io/three-tier/backend
@@ -32,6 +34,9 @@ backend:
   env:
     APP_ENV: dev
     APP_VERSION: build-29
+  blueGreen:
+    enabled: true
+    autoPromotionEnabled: false
 database:
   image:
     repository: postgres

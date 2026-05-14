@@ -1,0 +1,37 @@
+{{- if .Values.blueGreen.enabled }}
+{{- if .Values.blueGreen.analysis.enabled }}
+# AnalysisTemplate queries Prometheus for pod health metrics before promotion.
+# Argo Rollouts runs this AFTER green is up but BEFORE switching active Service.
+# If success rate < threshold, the rollout auto-aborts and green is scaled down.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: frontend-success-rate
+spec:
+  args:
+    - name: service-name
+  metrics:
+    - name: success-rate
+      # Query istio_requests_total metric exposed by istio-proxy sidecar.
+      # Calculates % of non-5xx responses on the preview Service.
+      # Must be >=95% (lab threshold; prod is usually 99-99.9%).
+      successCondition: result[0] >= 0.95
+      failureLimit: 3
+      interval: 30s
+      count: 3
+      provider:
+        prometheus:
+          address: http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            sum(rate(istio_requests_total{
+              reporter="destination",
+              destination_service_name="{{`{{args.service-name}}`}}",
+              response_code!~"5.."
+            }[2m]))
+            /
+            sum(rate(istio_requests_total{
+              reporter="destination",
+              destination_service_name="{{`{{args.service-name}}`}}"
+            }[2m]))
+{{- end }}
+{{- end }}

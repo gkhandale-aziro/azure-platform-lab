@@ -23,3 +23,9 @@ env: {}
 resources:
   requests: { cpu: 50m, memory: 64Mi }
   limits:   { cpu: 200m, memory: 128Mi }
+
+# Blue/Green progressive delivery via Argo Rollouts.
+# When enabled, deploys a Rollout + preview Service instead of a Deployment.
+blueGreen:
+  enabled: false
+  autoPromotionEnabled: false

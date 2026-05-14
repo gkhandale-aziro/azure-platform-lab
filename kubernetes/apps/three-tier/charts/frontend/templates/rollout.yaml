@@ -13,6 +13,16 @@ spec:
       previewService: frontend-preview  # serves test traffic for the new version
       autoPromotionEnabled: {{ .Values.blueGreen.autoPromotionEnabled }}
       scaleDownDelaySeconds: 30
+      {{- if .Values.blueGreen.analysis.enabled }}
+      # prePromotionAnalysis runs against the preview Service before
+      # auto-promotion. If success-rate metric fails, rollout aborts.
+      prePromotionAnalysis:
+        templates:
+          - templateName: frontend-success-rate
+        args:
+          - name: service-name
+            value: frontend-preview
+      {{- end }}
   selector:
     matchLabels:
       app: frontend

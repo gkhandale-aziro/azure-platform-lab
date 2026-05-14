@@ -1,12 +1,18 @@
-{{- if not .Values.blueGreen.enabled }}
-apiVersion: apps/v1
-kind: Deployment
+{{- if .Values.blueGreen.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
 metadata:
   name: backend
   labels:
     app: backend
 spec:
   replicas: {{ .Values.replicaCount }}
+  strategy:
+    blueGreen:
+      activeService: backend
+      previewService: backend-preview
+      autoPromotionEnabled: {{ .Values.blueGreen.autoPromotionEnabled }}
+      scaleDownDelaySeconds: 30
   selector:
     matchLabels:
       app: backend
