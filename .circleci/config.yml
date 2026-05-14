@@ -1,0 +1,354 @@
+# CircleCI pipeline for the three-tier lab.
+#
+# Mirrors the GitHub Actions workflow at .github/workflows/ci-cd.yaml:
+#   1. CI checks (backend + frontend tests + lint, gitleaks) — parallel
+#   2. Build images (backend + frontend with kaniko-equivalent) — parallel
+#   3. Trivy scan — parallel matrix
+#   4. Update dev image tags in Git (GitOps) — auto
+#   5. Manual approval gate
+#   6. Update prod image tags — same SHA promoted
+#
+# What this teaches:
+#   - Workflows with DAG (requires:)
+#   - Multiple executor types (docker, machine, remote-docker)
+#   - Orbs for reuse (node, slack, etc.)
+#   - Multi-key cache fallback
+#   - Parameters for matrix-like jobs
+#   - type: approval for manual gates
+#   - Contexts for shared secrets across projects
+#   - circleci tests split for test parallelism
+
+version: 2.1
+
+# ── Orbs: reusable building blocks ───────────────────────────────────────
+# Like GitHub Actions composite actions, but versioned + namespaced.
+# `node@5.2.0` is the official Node orb — exposes commands like
+# `node/install-packages`, executors like `node/default`.
+orbs:
+  node: circleci/node@5.2.0
+  azure-cli: circleci/azure-cli@1.2.2
+
+# ── Parameters: workflow-level inputs ────────────────────────────────────
+# Equivalent to GitHub Actions `workflow_dispatch.inputs`.
+# Can be set when manually triggering a pipeline via API/UI.
+parameters:
+  deploy_env:
+    type: enum
+    enum: ["dev", "prod"]
+    default: "dev"
+    description: Environment to deploy to
+
+# ── Reusable command definitions ─────────────────────────────────────────
+# Like GitHub Actions composite actions defined inline. DRY pattern.
+commands:
+  install_and_cache_npm:
+    description: Install npm deps with cache fallback
+    parameters:
+      app_dir:
+        type: string
+        description: Path under apps/, e.g. "backend" or "frontend"
+    steps:
+      - restore_cache:
+          keys:
+            - v1-<< parameters.app_dir >>-deps-{{ checksum "apps/<< parameters.app_dir >>/package-lock.json" }}
+            - v1-<< parameters.app_dir >>-deps-
+      - run:
+          name: npm ci
+          working_directory: apps/<< parameters.app_dir >>
+          command: npm ci --no-audit --no-fund
+      - save_cache:
+          key: v1-<< parameters.app_dir >>-deps-{{ checksum "apps/<< parameters.app_dir >>/package-lock.json" }}
+          paths:
+            - apps/<< parameters.app_dir >>/node_modules
+
+# ── Jobs ─────────────────────────────────────────────────────────────────
+jobs:
+  # ── Resolve image tag once (git SHA) ────────────────────────────────────
+  # Sets a workflow-wide env var via the workspace pattern.
+  # The persisted file is read by downstream jobs.
+  resolve-tag:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - checkout
+      - run:
+          name: Compute short SHA
+          command: |
+            mkdir -p workspace
+            echo "sha-$(git rev-parse --short=7 HEAD)" > workspace/image_tag
+            echo "Image tag: $(cat workspace/image_tag)"
+      - persist_to_workspace:
+          root: workspace
+          paths: [image_tag]
+
+  # ── CI: Backend tests + lint ────────────────────────────────────────────
+  backend-ci:
+    docker:
+      - image: cimg/node:20.10
+    steps:
+      - checkout
+      - install_and_cache_npm:
+          app_dir: backend
+      - run:
+          name: Test
+          working_directory: apps/backend
+          command: npm test
+      - run:
+          name: Lint
+          working_directory: apps/backend
+          command: npm run lint
+      - store_test_results:
+          path: apps/backend/junit.xml
+      - store_artifacts:
+          path: apps/backend/junit.xml
+          destination: junit-backend.xml
+
+  # ── CI: Frontend tests + lint ───────────────────────────────────────────
+  frontend-ci:
+    docker:
+      - image: cimg/node:20.10
+    steps:
+      - checkout
+      - install_and_cache_npm:
+          app_dir: frontend
+      - run:
+          name: Test
+          working_directory: apps/frontend
+          command: npm test -- --reporter=verbose --reporter=junit --outputFile=junit.xml
+      - run:
+          name: Lint
+          working_directory: apps/frontend
+          command: npm run lint
+      - store_test_results:
+          path: apps/frontend/junit.xml
+      - store_artifacts:
+          path: apps/frontend/junit.xml
+          destination: junit-frontend.xml
+
+  # ── Secret scan with gitleaks ───────────────────────────────────────────
+  # Demonstrates: pulling a binary into a generic image.
+  # Could also use a community orb if one exists.
+  secret-scan:
+    docker:
+      - image: zricethezav/gitleaks:v8.21.0
+    steps:
+      - checkout
+      - run:
+          name: Gitleaks scan
+          command: gitleaks detect --source=. --no-banner --redact
+
+  # ── Build image (parameterized: backend OR frontend) ─────────────────────
+  # Demonstrates:
+  #   - machine executor (needed for Docker-in-Docker / buildx)
+  #   - parameters (DRY across two builds)
+  #   - secrets from Context: $ACR_LOGIN_SERVER, $ACR_CLIENT_ID, $ACR_CLIENT_SECRET
+  build-image:
+    machine:
+      image: ubuntu-2204:current
+      docker_layer_caching: true  # premium feature — caches base layers across builds
+    parameters:
+      app:
+        type: enum
+        enum: ["backend", "frontend"]
+    steps:
+      - checkout
+      - attach_workspace:
+          at: workspace
+      - run:
+          name: Load image tag
+          command: |
+            IMAGE_TAG=$(cat workspace/image_tag)
+            echo "export IMAGE_TAG=$IMAGE_TAG" >> "$BASH_ENV"
+            echo "Tag: $IMAGE_TAG"
+      - run:
+          name: Login to ACR
+          command: |
+            echo "$ACR_CLIENT_SECRET" | docker login "$ACR_LOGIN_SERVER" \
+              --username "$ACR_CLIENT_ID" --password-stdin
+      - run:
+          name: Build and push << parameters.app >>
+          command: |
+            IMAGE="$ACR_LOGIN_SERVER/three-tier/<< parameters.app >>"
+            docker build \
+              --tag "$IMAGE:$IMAGE_TAG" \
+              --tag "$IMAGE:latest" \
+              apps/<< parameters.app >>
+            docker push "$IMAGE:$IMAGE_TAG"
+            docker push "$IMAGE:latest"
+
+  # ── Trivy scan ───────────────────────────────────────────────────────────
+  # Demonstrates: matrix-like usage via parameters at the workflow level.
+  trivy-scan:
+    docker:
+      - image: aquasec/trivy:0.58.0
+    parameters:
+      app:
+        type: enum
+        enum: ["backend", "frontend"]
+    steps:
+      - checkout
+      - attach_workspace:
+          at: workspace
+      - run:
+          name: Login to ACR
+          command: |
+            mkdir -p ~/.docker
+            cat > ~/.docker/config.json <<EOF
+            {
+              "auths": {
+                "$ACR_LOGIN_SERVER": {
+                  "auth": "$(echo -n "$ACR_CLIENT_ID:$ACR_CLIENT_SECRET" | base64 -w0)"
+                }
+              }
+            }
+            EOF
+      - run:
+          name: Scan << parameters.app >>
+          command: |
+            IMAGE_TAG=$(cat workspace/image_tag)
+            trivy image --severity HIGH,CRITICAL --ignore-unfixed \
+              --ignorefile .trivyignore \
+              --format table --output trivy-<< parameters.app >>.txt \
+              "$ACR_LOGIN_SERVER/three-tier/<< parameters.app >>:$IMAGE_TAG" || true
+      - store_artifacts:
+          path: trivy-<< parameters.app >>.txt
+          destination: trivy-<< parameters.app >>.txt
+
+  # ── Update dev image tags in Git ────────────────────────────────────────
+  # GitOps step: edit values-dev.yaml, commit, push. ArgoCD picks up.
+  update-dev-tags:
+    docker:
+      - image: cimg/python:3.12
+    steps:
+      - checkout
+      - attach_workspace:
+          at: workspace
+      - run:
+          name: Configure git
+          command: |
+            git config user.name "circleci[bot]"
+            git config user.email "circleci-bot@users.noreply.github.com"
+      - run:
+          name: Edit values-dev.yaml
+          command: |
+            IMAGE_TAG=$(cat workspace/image_tag)
+            python3 <<EOF
+            import yaml
+            f = "kubernetes/apps/three-tier/values-dev.yaml"
+            with open(f) as fp: vals = yaml.safe_load(fp)
+            vals["frontend"]["image"]["tag"] = "$IMAGE_TAG"
+            vals["backend"]["image"]["tag"] = "$IMAGE_TAG"
+            vals["backend"]["env"]["APP_VERSION"] = "$IMAGE_TAG"
+            with open(f, "w") as fp: yaml.safe_dump(vals, fp, default_flow_style=False, sort_keys=False)
+            EOF
+      - run:
+          name: Commit and push
+          command: |
+            IMAGE_TAG=$(cat workspace/image_tag)
+            git add kubernetes/apps/three-tier/values-dev.yaml
+            git commit -m "ci(dev): bump images to $IMAGE_TAG [skip ci]" || echo "no changes"
+            git pull --rebase origin master
+            # Need $GITHUB_TOKEN in context to push back
+            git push https://${GITHUB_TOKEN}@github.com/gkhandale-aziro/azure-platform-lab.git HEAD:master
+
+  # ── Update prod image tags ───────────────────────────────────────────────
+  # Same SHA as dev → values-prod.yaml. Image promotion (build once, deploy many).
+  update-prod-tags:
+    docker:
+      - image: cimg/python:3.12
+    steps:
+      - checkout
+      - attach_workspace:
+          at: workspace
+      - run:
+          name: Configure git
+          command: |
+            git config user.name "circleci[bot]"
+            git config user.email "circleci-bot@users.noreply.github.com"
+      - run:
+          name: Edit values-prod.yaml
+          command: |
+            IMAGE_TAG=$(cat workspace/image_tag)
+            python3 <<EOF
+            import yaml
+            f = "kubernetes/apps/three-tier/values-prod.yaml"
+            with open(f) as fp: vals = yaml.safe_load(fp)
+            vals["frontend"]["image"]["tag"] = "$IMAGE_TAG"
+            vals["backend"]["image"]["tag"] = "$IMAGE_TAG"
+            vals["backend"]["env"]["APP_VERSION"] = "$IMAGE_TAG"
+            with open(f, "w") as fp: yaml.safe_dump(vals, fp, default_flow_style=False, sort_keys=False)
+            EOF
+      - run:
+          name: Commit and push
+          command: |
+            IMAGE_TAG=$(cat workspace/image_tag)
+            git add kubernetes/apps/three-tier/values-prod.yaml
+            git commit -m "ci(prod): promote images $IMAGE_TAG [skip ci]" || echo "no changes"
+            git pull --rebase origin master
+            git push https://${GITHUB_TOKEN}@github.com/gkhandale-aziro/azure-platform-lab.git HEAD:master
+
+# ── Workflows ────────────────────────────────────────────────────────────
+workflows:
+  # Single workflow chaining everything. `requires:` builds the DAG.
+  # Jobs without `requires:` run in parallel.
+  ci-cd:
+    jobs:
+      # Stage 1 — Resolve image tag (must run first; others depend on it)
+      - resolve-tag
+
+      # Stage 2 — CI checks in parallel (no requires between them)
+      - backend-ci
+      - frontend-ci
+      - secret-scan
+
+      # Stage 3 — Build images in parallel, gated on all CI passing
+      - build-image:
+          name: build-backend
+          app: backend
+          context: azure-lab        # ← Context provides ACR_* secrets
+          requires:
+            - backend-ci
+            - secret-scan
+            - resolve-tag
+
+      - build-image:
+          name: build-frontend
+          app: frontend
+          context: azure-lab
+          requires:
+            - frontend-ci
+            - secret-scan
+            - resolve-tag
+
+      # Stage 4 — Trivy scan in parallel after both builds
+      - trivy-scan:
+          name: trivy-backend
+          app: backend
+          context: azure-lab
+          requires: [build-backend, build-frontend]
+
+      - trivy-scan:
+          name: trivy-frontend
+          app: frontend
+          context: azure-lab
+          requires: [build-backend, build-frontend]
+
+      # Stage 5 — GitOps commit for dev. Auto, no gate.
+      - update-dev-tags:
+          context: github-write
+          requires:
+            - trivy-backend
+            - trivy-frontend
+
+      # Stage 6 — Manual approval gate before prod.
+      # This is CircleCI's equivalent of GitHub Environments with reviewers.
+      # The job sits in the workflow with type: approval and pauses
+      # until someone clicks "Approve" in the CircleCI UI.
+      - hold-prod:
+          type: approval
+          requires: [update-dev-tags]
+
+      # Stage 7 — GitOps commit for prod (same SHA).
+      - update-prod-tags:
+          context: github-write
+          requires: [hold-prod]
