@@ -12,9 +12,9 @@ spec:
     - name: service-name
   metrics:
     - name: success-rate
-      # Query istio_requests_total metric exposed by istio-proxy sidecar.
-      # Calculates % of non-5xx responses on the preview Service.
-      # Must be >=95% (lab threshold; prod is usually 99-99.9%).
+      # Use `or vector(1)` so when there's no traffic yet, the query returns 1.0
+      # (100% success) instead of an empty result, which crashes the analyzer.
+      # In production you'd want a separate "min-traffic" check before this.
       successCondition: result[0] >= 0.95
       failureLimit: 3
       interval: 30s
@@ -23,15 +23,18 @@ spec:
         prometheus:
           address: http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
           query: |
-            sum(rate(istio_requests_total{
-              reporter="destination",
-              destination_service_name="{{`{{args.service-name}}`}}",
-              response_code!~"5.."
-            }[2m]))
-            /
-            sum(rate(istio_requests_total{
-              reporter="destination",
-              destination_service_name="{{`{{args.service-name}}`}}"
-            }[2m]))
+            (
+              sum(rate(istio_requests_total{
+                reporter="destination",
+                destination_service_name="{{`{{args.service-name}}`}}",
+                response_code!~"5.."
+              }[2m]))
+              /
+              sum(rate(istio_requests_total{
+                reporter="destination",
+                destination_service_name="{{`{{args.service-name}}`}}"
+              }[2m]))
+            )
+            or vector(1)
 {{- end }}
 {{- end }}
