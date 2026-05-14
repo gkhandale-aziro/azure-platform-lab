@@ -193,15 +193,8 @@ jobs:
           name: Login to ACR
           command: |
             mkdir -p ~/.docker
-            cat > ~/.docker/config.json <<EOF
-            {
-              "auths": {
-                "$ACR_LOGIN_SERVER": {
-                  "auth": "$(echo -n "$ACR_CLIENT_ID:$ACR_CLIENT_SECRET" | base64 -w0)"
-                }
-              }
-            }
-            EOF
+            AUTH=$(echo -n "$ACR_CLIENT_ID:$ACR_CLIENT_SECRET" | base64 -w0)
+            printf '{"auths":{"%s":{"auth":"%s"}}}' "$ACR_LOGIN_SERVER" "$AUTH" > ~/.docker/config.json
       - run:
           name: Scan << parameters.app >>
           command: |
@@ -231,16 +224,17 @@ jobs:
       - run:
           name: Edit values-dev.yaml
           command: |
-            IMAGE_TAG=$(cat workspace/image_tag)
-            python3 <<EOF
-            import yaml
-            f = "kubernetes/apps/three-tier/values-dev.yaml"
+            export IMAGE_TAG=$(cat workspace/image_tag)
+            python3 -c "
+            import os, yaml
+            tag = os.environ['IMAGE_TAG']
+            f = 'kubernetes/apps/three-tier/values-dev.yaml'
             with open(f) as fp: vals = yaml.safe_load(fp)
-            vals["frontend"]["image"]["tag"] = "$IMAGE_TAG"
-            vals["backend"]["image"]["tag"] = "$IMAGE_TAG"
-            vals["backend"]["env"]["APP_VERSION"] = "$IMAGE_TAG"
-            with open(f, "w") as fp: yaml.safe_dump(vals, fp, default_flow_style=False, sort_keys=False)
-            EOF
+            vals['frontend']['image']['tag'] = tag
+            vals['backend']['image']['tag'] = tag
+            vals['backend']['env']['APP_VERSION'] = tag
+            with open(f, 'w') as fp: yaml.safe_dump(vals, fp, default_flow_style=False, sort_keys=False)
+            "
       - run:
           name: Commit and push
           command: |
@@ -268,16 +262,17 @@ jobs:
       - run:
           name: Edit values-prod.yaml
           command: |
-            IMAGE_TAG=$(cat workspace/image_tag)
-            python3 <<EOF
-            import yaml
-            f = "kubernetes/apps/three-tier/values-prod.yaml"
+            export IMAGE_TAG=$(cat workspace/image_tag)
+            python3 -c "
+            import os, yaml
+            tag = os.environ['IMAGE_TAG']
+            f = 'kubernetes/apps/three-tier/values-prod.yaml'
             with open(f) as fp: vals = yaml.safe_load(fp)
-            vals["frontend"]["image"]["tag"] = "$IMAGE_TAG"
-            vals["backend"]["image"]["tag"] = "$IMAGE_TAG"
-            vals["backend"]["env"]["APP_VERSION"] = "$IMAGE_TAG"
-            with open(f, "w") as fp: yaml.safe_dump(vals, fp, default_flow_style=False, sort_keys=False)
-            EOF
+            vals['frontend']['image']['tag'] = tag
+            vals['backend']['image']['tag'] = tag
+            vals['backend']['env']['APP_VERSION'] = tag
+            with open(f, 'w') as fp: yaml.safe_dump(vals, fp, default_flow_style=False, sort_keys=False)
+            "
       - run:
           name: Commit and push
           command: |
