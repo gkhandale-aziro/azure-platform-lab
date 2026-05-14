@@ -219,9 +219,9 @@ jobs:
           BUILD_TAG="build-${{ github.run_number }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase origin master
           git add ${{ env.CHART_PATH }}/values-dev.yaml
           git commit -m "ci(dev): bump images to ${BUILD_TAG}" || echo "no changes"
+          git pull --rebase origin master
           git push origin master
 
   # ── Manual approval gate before prod ──────────────────────────────────────
@@ -273,7 +273,7 @@ jobs:
           BUILD_TAG="build-${{ github.run_number }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase origin master
           git add ${{ env.CHART_PATH }}/values-prod.yaml
           git commit -m "ci(prod): bump images to ${BUILD_TAG}" || echo "no changes"
+          git pull --rebase origin master
           git push origin master
