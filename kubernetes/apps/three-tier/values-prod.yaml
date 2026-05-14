@@ -12,6 +12,13 @@ frontend:
       cpu: 100m
       memory: 128Mi
   useConfigMapHTML: false
+  blueGreen:
+    enabled: true
+    # Prod requires manual promote — no auto-promotion even if analysis passes.
+    # Operator must verify preview, then run `kubectl argo rollouts promote`.
+    autoPromotionEnabled: false
+    analysis:
+      enabled: true
 backend:
   image:
     repository: gskplatacrn73d5y.azurecr.io/three-tier/backend
@@ -29,6 +36,9 @@ backend:
   env:
     APP_ENV: prod
     APP_VERSION: sha-46fa90f
+  blueGreen:
+    enabled: true
+    autoPromotionEnabled: false
 database:
   image:
     repository: postgres
