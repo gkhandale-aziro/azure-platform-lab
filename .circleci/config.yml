@@ -217,6 +217,9 @@ jobs:
       - attach_workspace:
           at: workspace
       - run:
+          name: Install pyyaml
+          command: pip install --quiet pyyaml
+      - run:
           name: Configure git
           command: |
             git config user.name "circleci[bot]"
@@ -254,6 +257,9 @@ jobs:
       - checkout
       - attach_workspace:
           at: workspace
+      - run:
+          name: Install pyyaml
+          command: pip install --quiet pyyaml
       - run:
           name: Configure git
           command: |
