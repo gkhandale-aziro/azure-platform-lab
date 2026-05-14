@@ -1,7 +1,7 @@
 frontend:
   image:
     repository: gskplatacrn73d5y.azurecr.io/three-tier/frontend
-    tag: build-29
+    tag: build-30
   replicaCount: 1
   greeting: Hello from DEV
   resources:
@@ -20,7 +20,7 @@ frontend:
 backend:
   image:
     repository: gskplatacrn73d5y.azurecr.io/three-tier/backend
-    tag: build-29
+    tag: build-30
   replicaCount: 1
   echoMessage: backend response from dev
   resources:
@@ -33,7 +33,7 @@ backend:
   useEchoArgs: false
   env:
     APP_ENV: dev
-    APP_VERSION: build-29
+    APP_VERSION: build-30
   blueGreen:
     enabled: true
     autoPromotionEnabled: false
