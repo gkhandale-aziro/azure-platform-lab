@@ -23,8 +23,6 @@ spec:
     - match:
         - uri:
             prefix: /api/
-      rewrite:
-        uri: /
       route:
         - destination:
             host: backend.dev.svc.cluster.local
