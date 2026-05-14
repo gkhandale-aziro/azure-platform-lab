@@ -1,0 +1,17 @@
+{{- if .Values.blueGreen.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-preview
+  labels:
+    app: frontend
+    role: preview
+spec:
+  type: ClusterIP
+  selector:
+    app: frontend
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: 80
+{{- end }}

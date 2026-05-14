@@ -1,12 +1,18 @@
-{{- if not .Values.blueGreen.enabled }}
-apiVersion: apps/v1
-kind: Deployment
+{{- if .Values.blueGreen.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
 metadata:
   name: frontend
   labels:
     app: frontend
 spec:
   replicas: {{ .Values.replicaCount }}
+  strategy:
+    blueGreen:
+      activeService: frontend           # serves live traffic
+      previewService: frontend-preview  # serves test traffic for the new version
+      autoPromotionEnabled: {{ .Values.blueGreen.autoPromotionEnabled }}
+      scaleDownDelaySeconds: 30
   selector:
     matchLabels:
       app: frontend
@@ -15,7 +21,6 @@ spec:
       labels:
         app: frontend
       annotations:
-        # Tight single-node lab: shrink sidecar requests so pods can schedule.
         sidecar.istio.io/proxyCPU: "10m"
         sidecar.istio.io/proxyCPULimit: "100m"
         sidecar.istio.io/proxyMemory: "64Mi"

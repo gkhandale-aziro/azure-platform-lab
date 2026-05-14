@@ -12,6 +12,9 @@ frontend:
       cpu: 100m
       memory: 128Mi
   useConfigMapHTML: false
+  blueGreen:
+    enabled: true
+    autoPromotionEnabled: false
 backend:
   image:
     repository: gskplatacrn73d5y.azurecr.io/three-tier/backend
