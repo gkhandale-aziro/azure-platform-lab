@@ -1,0 +1,7 @@
+# gitleaks ignore file — false positives in docs/examples.
+# Format: <commit-sha>:<file>:<rule>:<line>
+# Each line is a "fingerprint" gitleaks emits when -v is passed.
+
+# Textbook documentation example — base64-encoded fake password "supersecret"
+# used to illustrate that Kubernetes Secrets are base64-encoded, not encrypted.
+f05ed41cc99069b608ed80b66268d6ded13ed0b8:docs/textbook/platform-engineering-handbook.md:generic-api-key:1103

@@ -1100,7 +1100,7 @@ metadata:
   name: db-creds
 type: Opaque
 data:
-  password: c3VwZXJzZWNyZXQ=     # base64 encoded
+  password: PEJBU0U2NCBFTkNPREVEPg==     # base64 of "<BASE64 ENCODED>"
 ```
 
 **Critical:** Secrets are base64-encoded, NOT encrypted by default. Use external secret managers (Azure Key Vault, AWS Secrets Manager) for real secrets. Our lab still has hardcoded passwords in values.yaml — a known production gap.
