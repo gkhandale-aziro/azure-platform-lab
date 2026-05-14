@@ -459,12 +459,20 @@ Then on the laptop:
 
 | URL | UI |
 | --- | --- |
-| http://dev.lvh.me:59999/ | dev frontend |
-| http://prod.lvh.me:59999/ | prod frontend |
-| http://localhost:50080/ | Jenkins |
-| http://localhost:50090/ | Helm Dashboard |
+| http://dev.lvh.me:59999/ | dev frontend (blue/active) |
+| http://prod.lvh.me:59999/ | prod frontend (blue/active) |
+| http://localhost:58181/ | dev frontend preview (green, during blue/green deploys) |
+| http://localhost:59080/ | Jenkins |
+| http://localhost:59090/ | Helm Dashboard |
 | http://localhost:58443/ | ArgoCD |
 | https://localhost:58444/ | Kubernetes Dashboard (HTTPS — accept self-signed cert) |
+| http://localhost:53000/ | Grafana (admin / see secret) |
+| http://localhost:53100/rollouts/ | Argo Rollouts UI |
+
+Grafana admin password:
+```bash
+kubectl get secret -n monitoring prometheus-grafana -o jsonpath='{.data.admin-password}' | base64 -d && echo
+```
 
 UI passwords/tokens are kept in `~/.argocd-admin-password`, `~/.jenkins-admin-password`, `~/.k8s-dash-token` on the VM (chmod 600).
 
