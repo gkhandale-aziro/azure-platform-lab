@@ -1,7 +1,7 @@
 frontend:
   image:
     repository: gskplatacrn73d5y.azurecr.io/three-tier/frontend
-    tag: build-30
+    tag: sha-46fa90f
   replicaCount: 1
   greeting: Hello from PROD
   resources:
@@ -15,7 +15,7 @@ frontend:
 backend:
   image:
     repository: gskplatacrn73d5y.azurecr.io/three-tier/backend
-    tag: build-30
+    tag: sha-46fa90f
   replicaCount: 1
   echoMessage: backend response from prod
   resources:
@@ -28,7 +28,7 @@ backend:
   useEchoArgs: false
   env:
     APP_ENV: prod
-    APP_VERSION: build-30
+    APP_VERSION: sha-46fa90f
 database:
   image:
     repository: postgres
