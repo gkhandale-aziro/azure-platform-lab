@@ -13,420 +13,1236 @@ documentclass: report
 
 # Preface
 
-This handbook is built around a real working lab on Azure — an AKS cluster with a three-tier app, two CI/CD pipelines, GitOps, progressive delivery, and observability. Every concept is grounded in something you can run.
+## What this handbook is
 
-Read top to bottom for a complete journey from "what is the cloud" to "blue/green deployment with Prometheus gates." Skip to specific chapters if you need to fill a knowledge gap.
+A complete journey from "what is the cloud" to "blue/green deployment with Prometheus gates."
+
+Built around a real working lab on Azure — an AKS cluster with a three-tier app, three CI/CD pipelines, GitOps, progressive delivery, and observability. Every concept is grounded in something you can run.
 
 The lab repo is at https://github.com/gkhandale-aziro/azure-platform-lab.
 
-**How to use this book:**
+## How this handbook is structured
 
-1. Read each chapter
-2. Run the commands on your machine
-3. Read the "Why this matters" callouts — they're the interview answers
-4. Do the exercises at the end of each chapter
+The handbook has four parts:
+
+- **Part I — Foundations** (Chapters 1-9). Cloud, Linux, Git, Networking, Containers, Kubernetes, Terraform, Helm, Azure. Reads top-to-bottom for beginners; skip what you already know.
+- **Part II — Building the Lab** (Chapters 10-17). The seven iterations, with every line explained.
+- **Part III — Advanced Topics** (Chapters 18-21). Observability, Security, Production gaps, Interview Q&A.
+- **Part IV — Appendix** (A, B, C). Cheatsheets, PDF generation, where to go next.
+
+## How each chapter is structured
+
+Every chapter follows the same pattern:
+
+### Concept
+
+What the thing is. Plain English first, technical definition second.
+
+### Why it matters
+
+The motivation. What problem it solves.
+
+### How it works
+
+The mechanics. Diagrams, code, examples.
+
+### Gotchas
+
+The things that trip people up.
+
+### In our lab
+
+How this concept shows up in the lab we're building.
+
+### Interview talking points
+
+How to discuss this in a technical interview.
+
+### Exercises
+
+Hands-on practice at the end of every chapter.
+
+## How to use this handbook
+
+1. **Read each chapter slowly.** Don't try to memorize. Build understanding.
+2. **Run every command.** Type, don't copy-paste. Muscle memory matters.
+3. **Use the companion Glossary.** When you hit an unfamiliar term, look it up there.
+4. **Do the exercises.** They're where learning actually happens.
+5. **Compare to what you already know.** "How is this like X I've seen before?"
+6. **Take notes in your own words.** Don't highlight. Write your own summary.
+
+---
 
 # Part I — Foundations
 
 # Chapter 1: The Cloud and Why We're Here
 
-## 1.1 What "the cloud" actually is
+## 1.1 What the cloud actually is
 
-The cloud is just other people's computers. Specifically, it's:
+### Concept
 
-- Massive data centers (each holds 100,000+ physical servers)
-- High-speed networking between racks
-- Software that lets you **rent** parts of those servers by the hour
-- An API to provision, configure, and destroy resources on demand
+The cloud is just other people's computers. Specifically, massive data centers full of physical servers, with software that lets you rent slices of them by the hour or second.
 
-Before the cloud, to run a website you bought a physical server, drove it to a data center, paid for rack space, installed an OS, and dealt with everything yourself. The cloud abstracts this: you make an API call and 60 seconds later you have a Linux VM.
+You make an API call. Sixty seconds later, you have a Linux VM. You stop using it. The hourly charges stop.
 
-## 1.2 Three service models
+### Why it matters
 
-| Model | What you manage | What the cloud manages | Example |
+Before the cloud, getting a server meant:
+
+1. Order hardware from a vendor (weeks)
+2. Wait for delivery
+3. Drive to a colocation facility
+4. Rack and cable the server
+5. Install operating system
+6. Configure networking
+7. Hope nothing breaks
+
+The cloud reduces this to:
+
+```bash
+az vm create -g myrg -n myvm --image Ubuntu2204 --size Standard_B2s
+```
+
+Two minutes. Done. No hardware purchase.
+
+This shift transformed how we build software. Infrastructure becomes a tool you reach for, not a project you commit to.
+
+### How it works
+
+Cloud providers operate at massive scale. A single Azure region contains 3+ data centers, each holding 100,000+ physical servers. Software (the **hypervisor**) carves each server into many virtual machines.
+
+You request a VM via API. The cloud provider's scheduler finds capacity, provisions your VM on shared hardware, gives you a public IP and an OS image. You pay for the time you use it.
+
+### Service models
+
+Cloud services come in three layers, each managing more of the stack for you:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  IaaS — you manage from OS up                                │
+│  ┌──────────────────────────────────────┐                    │
+│  │ Your app                              │   ← you manage    │
+│  │ Runtime (Node, Python, etc.)          │   ← you manage    │
+│  │ OS (Linux, Windows)                   │   ← you manage    │
+│  ├──────────────────────────────────────┤                    │
+│  │ Virtualization                        │   ← cloud manages │
+│  │ Hardware                              │   ← cloud manages │
+│  └──────────────────────────────────────┘                    │
+│  Examples: Azure VM, AWS EC2                                  │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│  PaaS — you only manage your app                             │
+│  ┌──────────────────────────────────────┐                    │
+│  │ Your app                              │   ← you manage    │
+│  ├──────────────────────────────────────┤                    │
+│  │ Runtime, OS, virtualization, hardware │   ← cloud manages │
+│  └──────────────────────────────────────┘                    │
+│  Examples: Azure App Service, Azure Kubernetes Service,       │
+│  Heroku, Google App Engine                                    │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│  SaaS — you don't manage anything                             │
+│  ┌──────────────────────────────────────┐                    │
+│  │ Your data                             │   ← you manage    │
+│  ├──────────────────────────────────────┤                    │
+│  │ The entire stack                      │   ← cloud manages │
+│  └──────────────────────────────────────┘                    │
+│  Examples: Office 365, GitHub, Salesforce                     │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Picking the right model
+
+The right model depends on tradeoffs:
+
+| Model | More flexibility | Less work | More lock-in |
 |---|---|---|---|
-| **IaaS** (Infrastructure as a Service) | OS, runtime, app | Hardware, networking, virtualization | Azure VM, AWS EC2 |
-| **PaaS** (Platform as a Service) | App + config | Everything below the app | Azure App Service, Heroku |
-| **SaaS** (Software as a Service) | Your data only | The entire stack | Office 365, Salesforce |
+| **IaaS** | ✓✓✓ | ✗ | Low |
+| **PaaS** | ✓ | ✓✓ | Medium |
+| **SaaS** | ✗ | ✓✓✓ | High |
 
-**Where Kubernetes fits:** Kubernetes itself is between IaaS and PaaS. You manage app config + scaling rules; the cluster manages where containers run.
+**Rule of thumb:** pick the highest layer that solves your problem. Don't run a VM if a PaaS will do. Don't write your own auth system if Office 365 SSO works.
 
-## 1.3 The three big clouds
+### In our lab
 
-| | Azure | AWS | Google Cloud (GCP) |
+We use a mix:
+
+- **IaaS**: AKS worker nodes (we manage the OS, kubelet runs there)
+- **PaaS**: AKS control plane (Azure runs etcd, API server, scheduler), ACR (container registry)
+- **SaaS**: GitHub, CircleCI (we just use them; they run themselves)
+
+The boundary between "we manage" and "Azure manages" is what makes this a real platform engineering problem.
+
+### Gotchas
+
+**Cost spirals.** A forgotten VM is $80/month. A misconfigured Storage Account exporting terabytes is thousands. Always tag resources, set budgets, review costs weekly.
+
+**Lock-in.** Higher service layers mean more lock-in. PaaS often uses proprietary APIs (DynamoDB ≠ Cosmos DB ≠ Cloud Spanner). SaaS contracts can be hard to exit.
+
+**Free Trial limits.** Don't assume Free Trial = production-grade. Free SKUs have different rate limits, feature sets, and SLAs.
+
+### Interview talking points
+
+> **Q:** "Why pick PaaS over IaaS for Kubernetes?"
+>
+> "We picked AKS (managed Kubernetes, a PaaS) instead of self-managed Kubernetes on VMs because we want the cloud handling control plane upgrades and certificate rotation, not us. The tradeoff is reduced flexibility — we can't tweak etcd config or run alternative API servers — but for a typical workload that's a feature, not a limitation."
+
+> **Q:** "What's the cost story here?"
+>
+> "Our lab runs ~$140/month at 24/7. By using `az aks stop` overnight and on weekends, it drops to ~$35/month. Control plane is free in the Standard SKU; we only pay for the worker node VMs. For production we'd use the Premium SKU for the SLA, which adds about $75/month."
+
+### Exercises
+
+1. Create a free Azure account (https://azure.microsoft.com/free) — gets you $200 of credit for 30 days.
+2. Install the Azure CLI on your laptop.
+3. Run `az login` and identify your subscription ID.
+4. Create a resource group:
+   ```bash
+   az group create -n test-rg -l eastus2
+   ```
+5. List groups:
+   ```bash
+   az group list --output table
+   ```
+6. Delete the test group:
+   ```bash
+   az group delete -n test-rg --yes
+   ```
+7. Read the pricing page for one Azure service (https://azure.microsoft.com/en-us/pricing/). Notice cost dimensions.
+
+---
+
+## 1.2 The three big clouds
+
+### Concept
+
+There are three major cloud providers globally. Each has its strengths, its loyal customer base, and its own naming for similar services.
+
+### The contenders
+
+| Aspect | Azure | AWS | Google Cloud (GCP) |
 |---|---|---|---|
-| Owner | Microsoft | Amazon | Google |
-| Market share (2026) | ~24% | ~30% | ~12% |
-| Strong in | Enterprises, Windows shops, .NET, hybrid cloud | Pure size, mature service catalog | Data/ML, Kubernetes (they invented it) |
-| Compute | Azure Compute, AKS | EC2, EKS | Compute Engine, GKE |
-| Object storage | Azure Blob | S3 | Cloud Storage |
-| Managed K8s | AKS | EKS | GKE |
-| Container registry | ACR | ECR | Artifact Registry |
-| Identity | Microsoft Entra ID (formerly Azure AD) | IAM | Cloud IAM |
+| **Owner** | Microsoft | Amazon | Google |
+| **2026 market share** | ~24% | ~30% | ~12% |
+| **Started** | 2010 | 2006 | 2008 (publicly available 2011) |
+| **Strongest in** | Enterprise, Windows shops, .NET, hybrid cloud | Pure breadth, mature service catalog | Data, ML, Kubernetes (they invented it) |
+| **Identity** | Microsoft Entra ID (formerly Azure AD) | IAM | Cloud IAM |
+| **Compute** | Azure Compute, AKS | EC2, EKS | Compute Engine, GKE |
+| **Object storage** | Azure Blob | S3 | Cloud Storage |
+| **Managed K8s** | AKS | EKS | GKE |
+| **Container registry** | ACR | ECR | Artifact Registry |
+| **CDN** | Azure Front Door | CloudFront | Cloud CDN |
 
-**For this book we use Azure.** All concepts transfer; only the resource names change.
+### Picking a cloud
 
-## 1.4 Regions, availability zones, and resource groups
+Most companies pick a cloud for business reasons, not technical ones:
 
-### Regions
-A geographic area with one or more data centers. Examples: `eastus2`, `westeurope`, `centralindia`.
+- **Existing Microsoft licenses** → Azure
+- **Existing Amazon retail relationships** → AWS
+- **Existing Google Workspace** → GCP
+- **Multi-cloud strategy (FinOps optimization)** → all three
 
-Pick a region close to your users for low latency. Pick a region with your required services (not all services are in all regions — e.g., some GPU SKUs are only in `eastus`).
+Technically, all three are mature. Picking one over another for "better Kubernetes" is rarely a strong argument.
 
-### Availability Zones (AZ)
-Within a region, separate physical locations with independent power/cooling/network. Typically 3 AZs per region (some have 2, some have none).
+### Why this book uses Azure
 
-Why this matters: a single rack/data center can fail. Spread workloads across AZs for high availability.
+Three reasons:
 
-### Resource Groups
-A logical container for related Azure resources. Everything in a resource group can be deleted with one command (`az group delete`).
+1. **Free Trial credit** — $200 of credit for 30 days, easier than AWS Free Tier
+2. **Enterprise context** — most India-based platform engineering roles work with Azure
+3. **All concepts transfer** — what you learn here applies to AWS/GCP with renamed services
 
-**Rule of thumb:** one resource group per environment-or-app. Our lab uses `gskplat-rg-platform` for the AKS cluster + ACR.
+### Interview talking points
 
-## 1.5 Cost model
+> **Q:** "When would you choose AKS over EKS or GKE?"
+>
+> "Mostly business alignment. AKS for shops already on Azure — Entra ID SSO, ExpressRoute on-prem, enterprise agreements. EKS for mature AWS shops with deep service ecosystem usage. GKE for Google-aligned shops or teams that want Autopilot mode for zero node management. Technically all three are mature. AKS has the best Workload Identity story today. EKS has the broadest compute options (Fargate, multiple AMI lineages). GKE invented Kubernetes and historically leads on autoscaling and Autopilot."
+
+---
+
+## 1.3 Regions and availability zones
+
+### Concept
+
+Cloud providers run their hardware in **regions** — geographic areas, each with one or more data centers.
+
+Within a region, **availability zones** (AZs) are physically separated data centers with independent power, cooling, and network.
+
+### Why this matters
+
+Three reasons to care about regions:
+
+1. **Latency** — closer to users = faster requests
+2. **Data residency** — laws like GDPR (Europe), DPDP (India) require data stays in country
+3. **Service availability** — not every Azure service is in every region
+
+Three reasons to care about AZs:
+
+1. **Fault tolerance** — one data center can fail (fire, network outage); other AZs in the region stay up
+2. **Latency** — same-AZ is faster than cross-AZ
+3. **Cost** — cross-AZ traffic has small per-GB charges that add up at scale
+
+### How regions and AZs are organized
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Region: East US 2                                          │
+│                                                              │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐                │
+│  │ AZ 1     │    │ AZ 2     │    │ AZ 3     │                │
+│  │ Data     │    │ Data     │    │ Data     │                │
+│  │ Center A │    │ Center B │    │ Data     │                │
+│  └──────────┘    └──────────┘    │ Center C │                │
+│      │               │           └──────────┘                │
+│      └───────────────┴───────────────┘                       │
+│        Low-latency private fiber between AZs                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+For high availability, spread workloads across all three AZs. Single-AZ workloads are vulnerable to AZ-level outages.
+
+### Common Azure regions
+
+```
+Region             Location           Notes
+─────────────────────────────────────────────────────────────────
+eastus             Virginia, USA      Cheapest US region, all services
+eastus2            Virginia, USA      Used by our lab, all services
+westus2            Washington, USA    Paired with eastus2 for HA
+centralindia       Pune, India        India data residency
+southeastasia      Singapore          Asia primary
+westeurope         Netherlands        Europe primary
+```
+
+### Resource groups
+
+A **resource group** is a logical container for related resources. Like a folder.
+
+```
+Azure Subscription
+  ├── Resource Group: myapp-rg-dev
+  │     ├── VM
+  │     ├── Storage Account
+  │     └── Disk
+  ├── Resource Group: myapp-rg-prod
+  │     ├── VMs (3)
+  │     ├── Storage Accounts (2)
+  │     └── Disks (3)
+  └── Resource Group: shared-rg
+        ├── VNet
+        └── Log Analytics
+```
+
+Everything in a resource group can be deleted with one command:
+
+```bash
+az group delete -n myapp-rg-dev --yes
+```
+
+Resources can only be in **one** resource group. You can reference resources across groups (the VNet in `shared-rg` can host VMs from `myapp-rg-prod`), but each is owned by one group.
+
+### In our lab
+
+```
+Subscription: Free Trial
+  ├── Resource Group: gskplat-rg-tfstate
+  │     └── Storage Account (Terraform state)
+  └── Resource Group: gskplat-rg-platform
+        ├── ACR (container registry)
+        ├── AKS cluster
+        ├── VNet + subnets + NSGs
+        └── Log Analytics Workspace
+```
+
+Two RGs:
+
+1. `tfstate` for the Terraform state backend
+2. `platform` for the actual workload
+
+### Cost model
 
 Cloud is rented. You pay per hour (or per second). Common cost dimensions:
 
-| Resource | Cost driver |
+| Resource | What costs money |
 |---|---|
-| VMs | vCPU + RAM × hours + disk + outbound bandwidth |
-| Storage | GB × month + transactions |
-| Networking | Outbound bandwidth (egress) + inter-region traffic |
-| Managed services (AKS, ACR) | Usually free control plane + you pay for underlying VMs |
+| **VMs** | vCPU + RAM × hours, plus disk, plus outbound bandwidth |
+| **Storage** | GB × month, plus transactions |
+| **Networking** | Outbound bandwidth (egress) and inter-region traffic |
+| **Managed services** | Usually free control plane; you pay for underlying VMs |
 
-**Lab cost story:** Our 2-node D2s_v3 cluster runs ~$140/month at 24/7. By `az aks stop`-ing nights/weekends, we get to ~$35/month. Control plane is free in AKS.
+**Lab cost reality:**
 
-## 1.6 Why this matters in interviews
+- Our 2-node D2s_v3 cluster runs about $140/month at 24/7
+- `az aks stop` overnight drops it to ~$35/month
+- Control plane is free in AKS Standard SKU
+- ACR Basic is $5/month
 
-> "Why did you choose Azure for this project?"
+### Interview talking points
 
-Good answer:
-> "I needed to learn Azure for the role's tech stack. The Free Trial gave me $200 of credit, which lasted ~30 days running an AKS cluster part-time. The lab pattern transfers to AWS/GCP — same concepts (managed K8s + container registry + service mesh + GitOps), different SKUs."
+> **Q:** "How do you design for high availability in Azure?"
+>
+> "First, spread workloads across all three AZs in a region. For AKS, use a node pool with `zones = ['1', '2', '3']`. For databases, use a multi-AZ managed service. Second, replicate to a paired region for disaster recovery. Azure has built-in paired regions like eastus2/westus2. Third, use Azure Front Door or Traffic Manager for global load balancing. Fourth, ensure data has appropriate replication — GRS for cold data, RA-GRS for read replicas across regions."
 
-Bad answer:
-> "It was free."
+### Exercises
 
-The good answer shows you understand portability of skills.
-
-## 1.7 Exercises
-
-1. Create a free Azure account (https://azure.microsoft.com/free)
-2. Run `az login` and identify your subscription ID
-3. Create a resource group: `az group create -n test-rg -l eastus2`
-4. List it: `az group list --output table`
-5. Delete it: `az group delete -n test-rg --yes`
+1. Look up the Azure region map: https://azure.microsoft.com/global-infrastructure/geographies/
+2. Check which services are in your nearest region:
+   ```bash
+   az provider list --query "[].{Namespace:namespace}" -o table
+   ```
+3. Create a resource group in a specific region.
+4. List AZs available in a region:
+   ```bash
+   az vm list-skus --location eastus2 --resource-type virtualMachines --output table | head -20
+   ```
 
 ---
 
 # Chapter 2: Linux for Platform Engineers
 
-You will live in Linux terminals. Master these basics or struggle forever.
+## 2.1 Why Linux
 
-## 2.1 The shell
+### Concept
 
-Most Linux systems use `bash` or `zsh`. They interpret commands and have features like:
+You will live in Linux terminals. Every Kubernetes cluster runs on Linux nodes. Every Docker image is based on a Linux distribution. Every CI runner you'll use is Linux. SSH into a remote server: Linux.
 
-- **Pipes** (`|`) — output of one command into another: `ls | grep test`
-- **Redirection** (`>`, `>>`) — write to file: `ls > files.txt`
-- **Background processes** (`&`) — run in background: `kubectl port-forward ... &`
-- **Variables** (`$VAR`) — store values: `NAME=alice; echo $NAME`
+Master the basics, or struggle forever.
 
-## 2.2 Essential commands
+### What you need to know
+
+This chapter covers what platform engineers use daily. Not exhaustive — pragmatic.
+
+By the end of this chapter you'll be able to:
+
+- Navigate the filesystem efficiently
+- Read and search through files and logs
+- Manage processes
+- Connect to remote servers via SSH
+- Set up shell aliases for productivity
+- Understand permissions
+- Use systemd for service management
+
+---
+
+## 2.2 The shell
+
+### Concept
+
+A **shell** is the program that reads your typed commands and runs them. The black/green text terminal you see is the shell.
+
+Common shells:
+
+- **bash** — Bourne Again Shell. Default on most Linux. Portable.
+- **zsh** — Z Shell. Default on macOS. More features, plugin ecosystem (Oh My Zsh).
+- **fish** — Friendly Interactive Shell. Newer, more user-friendly defaults.
+
+For platform engineering, learn **bash** for scripts (portable across systems) and use **zsh** for daily interactive work.
+
+### Key shell features
+
+The shell has powerful features for chaining commands.
+
+**Pipes (`|`)** — send the output of one command into the next:
+
+```bash
+ps aux | grep node | awk '{print $2}'
+```
+
+This lists all processes, filters for "node", extracts the second column (PID). Three small tools chained.
+
+**Redirection (`>`, `>>`, `<`)** — read from or write to files:
+
+```bash
+ls > files.txt           # write output to file (overwrite)
+ls >> files.txt          # append output to file
+cat < files.txt          # read input from file
+```
+
+**Background processes (`&`)** — run a command in the background:
+
+```bash
+kubectl port-forward svc/web 8080:80 &
+```
+
+The shell returns control to you immediately; the process keeps running.
+
+**Variables (`$VAR`)** — store values:
+
+```bash
+NAME=alice
+echo "Hello, $NAME"
+```
+
+**Command substitution (`$(...)`)** — use a command's output as a value:
+
+```bash
+TODAY=$(date +%Y-%m-%d)
+echo "Today is $TODAY"
+```
+
+### Useful shell tips
+
+**Tab completion** — start typing, press Tab. Shell completes the command/path if unambiguous.
+
+**History** — press Up arrow to recall previous commands. `Ctrl+R` searches history.
+
+**Aliases** — give long commands short names in `~/.bashrc`:
+
+```bash
+alias k=kubectl
+alias gs='git status'
+alias kgp='kubectl get pods'
+```
+
+After adding aliases, `source ~/.bashrc` or open a new terminal.
+
+---
+
+## 2.3 Essential commands
 
 ### File navigation
-| Command | What |
-|---|---|
-| `ls -la` | list files with details |
-| `cd /path` | change directory |
-| `pwd` | print working directory |
-| `tree` | recursive directory view (if installed) |
-| `find . -name "*.yaml"` | search for files |
 
-### File manipulation
-| Command | What |
+| Command | What it does |
 |---|---|
-| `cat file.txt` | print whole file |
-| `head -20 file.txt` | first 20 lines |
-| `tail -20 file.txt` | last 20 lines |
-| `tail -f file.log` | follow new log lines (useful for live logs) |
-| `less file.txt` | paginated viewer (q to quit) |
-| `grep "error" file.log` | search lines containing "error" |
-| `grep -r "pattern" .` | recursive grep |
-| `wc -l file.txt` | count lines |
+| `ls` | List files in current directory |
+| `ls -la` | List with details, including hidden files |
+| `cd /path` | Change directory |
+| `cd ..` | Go up one directory |
+| `cd -` | Go to previous directory |
+| `pwd` | Print working directory |
+| `tree` | Show directory tree (install with `apt install tree`) |
+| `find . -name "*.yaml"` | Recursively search for YAML files |
+
+### Reading files
+
+| Command | What it does |
+|---|---|
+| `cat file.txt` | Print whole file |
+| `head -20 file.txt` | First 20 lines |
+| `tail -20 file.txt` | Last 20 lines |
+| `tail -f file.log` | Follow new log lines (useful for live logs) |
+| `less file.txt` | Paginated viewer (press `q` to quit) |
+
+### Searching files
+
+| Command | What it does |
+|---|---|
+| `grep "error" file.log` | Find lines containing "error" |
+| `grep -i "error" file.log` | Case-insensitive |
+| `grep -r "TODO" .` | Recursive search in current directory |
+| `grep -v "DEBUG" file.log` | Lines NOT matching |
+| `grep -n "error" file.log` | Show line numbers |
 
 ### Text processing
-| Command | What |
+
+| Command | What it does |
 |---|---|
-| `awk '{print $1}' file` | print first column |
-| `sed 's/old/new/g' file` | substitute |
-| `cut -d',' -f2 file.csv` | extract column 2 from CSV |
-| `sort` / `uniq -c` | sort and count duplicates |
-| `jq '.field'` | parse JSON (`apt install jq`) |
+| `awk '{print $1}' file` | Print first column |
+| `awk '{print $NF}' file` | Print last column |
+| `sed 's/old/new/g' file` | Substitute "old" with "new" everywhere |
+| `cut -d',' -f2 file.csv` | Extract column 2 from CSV |
+| `sort` | Sort lines alphabetically |
+| `sort -n` | Sort numerically |
+| `uniq -c` | Count unique lines (input must be sorted) |
+| `jq '.field'` | Parse JSON (install with `apt install jq`) |
 
 ### Processes
-| Command | What |
+
+| Command | What it does |
 |---|---|
-| `ps aux` | list all processes |
-| `pgrep -f "pattern"` | find PIDs matching pattern |
-| `kill -9 PID` | force-kill process |
-| `top` / `htop` | live process viewer |
-| `ss -tlnp` | listening TCP ports |
-| `lsof -i :8080` | what process owns port 8080 |
+| `ps aux` | List all running processes |
+| `ps aux \| grep node` | Find processes matching "node" |
+| `pgrep -f "pattern"` | Find PIDs matching pattern |
+| `kill PID` | Send SIGTERM (graceful) |
+| `kill -9 PID` | Send SIGKILL (force) |
+| `top` | Live process viewer (press `q` to quit) |
+| `htop` | Better top (install with `apt install htop`) |
+
+### Network
+
+| Command | What it does |
+|---|---|
+| `ss -tlnp` | Show listening TCP ports |
+| `ss -tan` | Show all TCP connections |
+| `lsof -i :8080` | What process owns port 8080 |
+| `curl -v https://example.com` | Verbose HTTP request |
+| `dig example.com` | DNS query |
+| `ping host` | Test reachability |
+| `traceroute host` | Show network path |
 
 ### File transfer
-| Command | What |
+
+| Command | What it does |
 |---|---|
-| `scp file user@host:/path` | copy file to remote host |
-| `rsync -avz src/ user@host:/dst/` | sync directory |
-| `curl -O https://example.com/file` | download |
-| `wget https://example.com/file` | download (alternative) |
+| `scp file user@host:/path` | Copy file to remote host |
+| `scp user@host:/path file` | Copy file from remote host |
+| `rsync -avz src/ user@host:/dst/` | Sync directory (efficient) |
+| `curl -O https://example.com/file` | Download (preserve filename) |
+| `wget https://example.com/file` | Download (alternative) |
 
-## 2.3 Permissions
+---
 
-Linux file permissions look like `-rwxr-xr-x`:
+## 2.4 Permissions
+
+### Concept
+
+Every Linux file has owner, group, and "others" permissions. They look like this:
 
 ```
-- rwx r-x r-x
-↑  ↑   ↑   ↑
-│  │   │   └── others can read+execute
-│  │   └── group can read+execute
-│  └── owner can read+write+execute
-└── file type (- = file, d = directory)
+-rwxr-xr-x  1 alice  staff  4096  Jan 15 12:00  myfile
 ```
 
-Common commands:
-- `chmod 755 file` — set permissions (7=rwx, 5=r-x, 4=r--)
-- `chmod +x script.sh` — make executable
-- `chown user:group file` — change ownership
-- `sudo` — run as root
+The first column is the permission string:
 
-## 2.4 SSH and remote work
+```
+-  rwx  r-x  r-x
+↑   ↑    ↑    ↑
+│   │    │    └── "others" can read+execute
+│   │    └── "group" can read+execute
+│   └── "owner" can read+write+execute
+└── file type (- = file, d = directory, l = symlink)
+```
+
+### Numeric representation
+
+Each set of `rwx` translates to a number:
+
+```
+r = 4
+w = 2
+x = 1
+
+rwx = 7
+r-x = 5
+r-- = 4
+--- = 0
+```
+
+So `chmod 755` means `rwxr-xr-x` (common for scripts).
+
+`chmod 600` means `rw-------` (common for SSH keys — only owner can read).
+
+### Common commands
+
+```bash
+chmod 755 file              # rwxr-xr-x
+chmod +x script.sh          # add execute permission
+chown alice file            # change owner to alice
+chown alice:staff file      # change owner and group
+sudo                        # run as root
+```
+
+### SSH key permissions
+
+SSH is strict about key permissions:
+
+```bash
+chmod 700 ~/.ssh
+chmod 600 ~/.ssh/id_ed25519
+chmod 644 ~/.ssh/id_ed25519.pub
+chmod 600 ~/.ssh/authorized_keys
+```
+
+If permissions are too open, SSH refuses to use the keys.
+
+---
+
+## 2.5 SSH and remote work
+
+### Concept
+
+SSH (Secure Shell) is how you connect to remote servers. Encrypted, key-based authentication is the standard.
 
 ### Generate a key pair
+
 ```bash
 ssh-keygen -t ed25519 -C "your@email.com"
-# Creates ~/.ssh/id_ed25519 (private) and id_ed25519.pub (public)
 ```
 
-Never share the private key. Put the public key on remote servers in `~/.ssh/authorized_keys`.
+This creates:
+
+- `~/.ssh/id_ed25519` — private key (NEVER share, NEVER commit)
+- `~/.ssh/id_ed25519.pub` — public key (safe to share)
+
+Put the public key on remote servers in `~/.ssh/authorized_keys` to enable login.
 
 ### SSH config file
-At `~/.ssh/config`:
+
+Stop typing `ssh user@host -p 2222 -i ~/.ssh/special_key` every time. Use `~/.ssh/config`:
 
 ```
 Host azurelab
   HostName 172.30.44.145
   User aziro
+  Port 22
   ServerAliveInterval 60
-  LocalForward 59080 localhost:8080
+  ServerAliveCountMax 3
+  IdentityFile ~/.ssh/azure_lab_key
+
+Host github.com
+  User git
+  IdentityFile ~/.ssh/github_ed25519
 ```
 
-Then just `ssh azurelab` instead of typing the whole command.
+Now just `ssh azurelab` instead of the long form.
 
-### LocalForward (tunneling)
-The `LocalForward 59080 localhost:8080` line means: traffic to `localhost:59080` on your laptop goes through the SSH tunnel and hits `localhost:8080` on the remote host. Critical for accessing services inside firewalled environments.
+### LocalForward (port tunneling)
 
-We use this in the lab to access Jenkins/Grafana/ArgoCD running on the AKS cluster from a laptop browser.
+A killer SSH feature. The `LocalForward` directive forwards a local port through the SSH connection to a remote port.
 
-## 2.5 Environment variables
-
-```bash
-export MY_VAR=value           # set for current shell + children
-echo $MY_VAR                  # print
-echo "${MY_VAR}_suffix"       # use in strings
-unset MY_VAR                  # remove
-env                           # list all env vars
+```
+Host azurelab
+  HostName 172.30.44.145
+  User aziro
+  LocalForward 8080 localhost:8080
+  LocalForward 9090 localhost:9090
 ```
 
-Common gotcha: `export` makes the variable available to child processes. Without `export`, only the current shell can see it.
+Now when you `ssh azurelab`, opening `http://localhost:8080` on your laptop reaches `localhost:8080` on the remote server.
 
-To persist across logins, add to `~/.bashrc` (bash) or `~/.zshrc` (zsh):
+### How LocalForward works
+
+```
+Your Laptop                      SSH Tunnel                   Remote Server
+─────────────                    ────────────                 ───────────────
+Browser requests                                              kubectl port-forward
+http://localhost:8080            Encrypted SSH                listens on
+       │                         connection                   localhost:8080
+       ▼                                                              │
+┌────────────────┐               ┌─────────────┐             ┌──────────────┐
+│ localhost:8080 │ ──── traffic ──►              ──── traffic ─►│ localhost:8080│
+└────────────────┘               │ port forward │             └──────────────┘
+                                 └─────────────┘
+```
+
+We use this constantly in the lab to access Jenkins, ArgoCD, Grafana — services running inside the AKS cluster — from a laptop browser.
+
+### Useful SSH tips
+
+**Run a one-off command:**
 
 ```bash
-# ~/.bashrc
+ssh azurelab 'kubectl get pods -A'
+```
+
+**Copy a file:**
+
+```bash
+scp myfile.txt azurelab:/home/aziro/
+scp azurelab:/home/aziro/myfile.txt .
+```
+
+**Keep connections alive when idle:**
+
+```
+Host *
+  ServerAliveInterval 60
+  ServerAliveCountMax 3
+```
+
+Add to top of `~/.ssh/config`. SSH sends a keep-alive every 60 seconds.
+
+---
+
+## 2.6 Environment variables
+
+### Concept
+
+Environment variables are key-value strings available to processes. Common uses:
+
+- Configuration (`AZURE_SUBSCRIPTION_ID`)
+- Secrets in CI (`API_KEY`)
+- Shell behavior (`PATH`, `HOME`, `EDITOR`)
+
+### Setting variables
+
+```bash
+MY_VAR=value             # set for current shell only
+export MY_VAR=value      # set for current shell AND child processes
+echo $MY_VAR             # print value
+echo "${MY_VAR}_suffix"  # use in strings
+unset MY_VAR             # remove
+env                      # list all environment variables
+```
+
+The difference between `MY_VAR=value` and `export MY_VAR=value` is critical:
+
+- Without `export`, only the current shell can see it
+- With `export`, child processes (including commands you run) inherit it
+
+### Persisting across logins
+
+To make variables available every time you log in, add to `~/.bashrc` (bash) or `~/.zshrc` (zsh):
+
+```bash
 export AZURE_SUBSCRIPTION="my-sub-id"
+export PATH="$PATH:/usr/local/myapp/bin"
 ```
 
-Our lab uses `~/.azure-lab.env` sourced from `~/.bashrc` so ARM_* env vars persist.
-
-## 2.6 systemd (process supervision)
-
-systemd manages long-running services on modern Linux. Key commands:
+For sensitive values, use a separate file with restricted permissions:
 
 ```bash
-systemctl status nginx        # is nginx running?
-sudo systemctl start nginx    # start
-sudo systemctl stop nginx
-sudo systemctl restart nginx
-sudo systemctl enable nginx   # start at boot
-sudo systemctl disable nginx  # don't start at boot
-journalctl -u nginx           # service logs
-journalctl -fu nginx          # follow service logs
+# ~/.azure-lab.env
+export ARM_CLIENT_ID="..."
+export ARM_CLIENT_SECRET="..."
+export ARM_TENANT_ID="..."
+export ARM_SUBSCRIPTION_ID="..."
 ```
 
-You won't deploy systemd services in Kubernetes (containers handle that), but you'll diagnose them on VMs, build servers, etc.
+```bash
+chmod 600 ~/.azure-lab.env
 
-## 2.7 Exercises
+# At the end of ~/.bashrc:
+[ -f ~/.azure-lab.env ] && source ~/.azure-lab.env
+```
 
-1. SSH into a VM (AWS Lightsail or Azure VM, both have free tiers)
-2. Create an SSH config alias
-3. Set up an SSH tunnel from your laptop to a service running on the VM
-4. Use `tail -f` on a log file while doing something that updates it
-5. Use `grep` + `awk` to extract specific data from a multiline file
+Now every new shell auto-sources the secrets file. Our lab uses this pattern.
+
+---
+
+## 2.7 systemd
+
+### Concept
+
+systemd manages long-running services on modern Linux. It's PID 1 (the first process the kernel starts). Everything else runs under it.
+
+### Key commands
+
+```bash
+systemctl status nginx           # is nginx running?
+sudo systemctl start nginx       # start
+sudo systemctl stop nginx        # stop
+sudo systemctl restart nginx     # restart
+sudo systemctl enable nginx      # start at boot
+sudo systemctl disable nginx     # don't start at boot
+journalctl -u nginx              # see service logs
+journalctl -fu nginx             # follow service logs
+journalctl --since "1 hour ago"  # logs from last hour
+```
+
+### When you'll use systemd
+
+You won't deploy systemd services in Kubernetes (containers handle their own supervision). But you'll:
+
+- Diagnose systemd-managed services on VMs (sshd, kubelet, containerd)
+- Read service logs to figure out why something failed at boot
+- Sometimes write your own systemd unit files for cron-like tasks
+
+### Service status meanings
+
+```
+● active (running)     — service is up and running
+○ inactive (dead)      — not running
+✗ failed               — crashed; check logs
+~ activating           — starting up
+~ deactivating         — shutting down
+```
+
+If you see `failed`, immediately run `journalctl -u <service>` to see what went wrong.
+
+---
+
+## 2.8 Exercises
+
+1. SSH into a VM (AWS Lightsail or Azure VM, both have free tiers).
+2. Generate an SSH key pair if you don't have one.
+3. Add an SSH config alias for your VM.
+4. Set up a LocalForward in your SSH config and verify it works.
+5. Use `tail -f` on a log file while doing something that updates it (e.g., `tail -f /var/log/syslog` while you `sudo ls /` in another terminal).
+6. Use `grep`, `awk`, and pipes to extract specific data from `ps aux`.
+7. Create an alias for your most common kubectl command and source it.
+8. Read systemd logs for the SSH service: `journalctl -u ssh --since "1 hour ago"`.
 
 ---
 
 # Chapter 3: Git and Version Control
 
-Git is the version control system every team uses. It tracks file changes, lets multiple people work together, and forms the foundation of every CI/CD system.
+## 3.1 What Git is
 
-## 3.1 What Git actually is
+### Concept
 
-Git tracks **snapshots** of your project over time. Each snapshot is a **commit** with:
+Git tracks **snapshots** of your project over time. Each snapshot is a **commit** containing:
+
 - A unique hash (SHA, like `abc1234567...`)
-- An author + timestamp
-- A message
-- A reference to its parent commit(s)
+- An author and timestamp
+- A message describing what changed
+- A reference to the parent commit(s)
 
 Commits form a directed acyclic graph (DAG). A **branch** is a moveable pointer to a commit. **HEAD** is a pointer to the current commit.
 
+### Why Git matters
+
+Version control is non-negotiable for any non-trivial work:
+
+- Experiment freely; revert mistakes
+- Collaborate without overwriting each other's work
+- Audit who changed what, when, why
+- Roll back to any past state
+- Branch off to try ideas without disturbing main
+
+Git is the de-facto standard. Every team uses it. Every CI system pulls from Git.
+
+---
+
 ## 3.2 The three states of a file
 
+### Concept
+
+A file in a Git repository moves through three states:
+
 ```
-Working directory ──── git add ───► Staging area ──── git commit ───► Repository
-                                       ↑                                  │
-                                       └────── git checkout ──────────────┘
+Working directory
+       │
+       │  git add
+       ▼
+Staging area
+       │
+       │  git commit
+       ▼
+Repository (history)
 ```
 
-| State | What |
-|---|---|
-| **Untracked** | Git doesn't know about this file |
-| **Modified** | Tracked file with uncommitted changes |
-| **Staged** | Modified file ready to commit |
-| **Committed** | Saved in the repo |
+A file can be:
+
+- **Untracked** — Git doesn't know about it
+- **Modified** — tracked, with uncommitted changes
+- **Staged** — modified, ready to commit
+- **Committed** — saved in history
+
+### Visualizing state transitions
+
+```
+Edit file         git add         git commit
+   │                 │                │
+   ▼                 ▼                ▼
+Working dir  →   Staging  →     Repository
+  Modified        Staged         Committed
+   │                                 │
+   └─── git checkout ────────────────┘
+        (restore from history)
+```
+
+---
 
 ## 3.3 Daily commands
 
+### Setup
+
 ```bash
-# Cloning and starting
-git clone https://github.com/user/repo.git
-git init                              # start tracking current directory
-
-# Daily flow
-git status                            # what's changed?
-git diff                              # show changes (unstaged)
-git diff --staged                     # show staged changes
-git add file.txt                      # stage one file
-git add .                             # stage everything
-git commit -m "fix: typo"             # commit staged changes
-git log --oneline -20                 # recent commits
-
-# Branches
-git branch                            # list branches
-git branch feature/new-thing          # create branch (doesn't switch to it)
-git checkout feature/new-thing        # switch to branch
-git checkout -b feature/new-thing     # create + switch
-git checkout master                   # switch back
-git merge feature/new-thing           # merge a branch into current
-git branch -d feature/new-thing       # delete branch
-
-# Remote work
-git remote -v                         # list remotes
-git fetch                             # download remote refs (no merge)
-git pull                              # fetch + merge
-git pull --rebase                     # fetch + rebase (cleaner history)
-git push                              # upload current branch
-git push origin master                # explicit remote + branch
+git config --global user.name "Your Name"
+git config --global user.email "you@example.com"
+git config --global pull.rebase true        # cleaner history
 ```
+
+### Starting a repo
+
+```bash
+git init                                     # start tracking current directory
+git clone https://github.com/user/repo.git   # clone an existing repo
+```
+
+### Checking status and changes
+
+```bash
+git status                       # what's changed?
+git diff                         # show changes (unstaged)
+git diff --staged                # show staged changes
+git log --oneline -20            # recent commits
+git log --graph --all            # visual history
+```
+
+### Making changes
+
+```bash
+git add file.txt                 # stage one file
+git add .                        # stage everything
+git commit -m "fix: typo"        # commit staged changes
+git commit -am "fix: typo"       # add + commit (only tracked files)
+```
+
+### Working with branches
+
+```bash
+git branch                       # list branches
+git branch feature/x             # create branch (don't switch to it)
+git checkout feature/x           # switch to branch
+git checkout -b feature/x        # create + switch
+git checkout master              # switch back
+git merge feature/x              # merge branch into current
+git branch -d feature/x          # delete branch
+```
+
+### Synchronizing with remote
+
+```bash
+git remote -v                    # list remotes
+git fetch                        # download remote refs (no merge)
+git pull                         # fetch + merge
+git pull --rebase                # fetch + rebase (cleaner)
+git push                         # upload current branch
+git push origin master           # explicit remote + branch
+```
+
+---
 
 ## 3.4 Branching strategies
 
-### Git Flow (heavy)
-- `master` = production
-- `develop` = next release
-- `feature/*` = work branches
-- `release/*` = stabilization
-- `hotfix/*` = emergency fixes
+### Concept
 
-Old-fashioned, rarely used now. Too many long-lived branches.
+How a team organizes branches determines how they collaborate. Three common patterns.
+
+### Git Flow (heavy, old-fashioned)
+
+```
+master    ────────────────────────────────►  (production)
+                ╲          ╱
+                 ╲        ╱
+develop  ─────────────────────────────────►  (next release)
+              ╲    │    ╱
+               ╲   │   ╱
+feature/foo  ───╯  │  ╰─────────────────────  (work branches)
+                   │
+release/v1.2 ──────────────────────────────►  (stabilization)
+                       │
+hotfix/x ──────────────╯──────────────────►  (emergency fixes)
+```
+
+Lots of branches, lots of ceremony. Rarely used now.
 
 ### GitHub Flow (modern, recommended)
-- `master` (or `main`) = always deployable
-- `feature/*` = short-lived branches
+
+```
+master  ───●───●───●───●───●───●────────────►  (always deployable)
+            │       │           ╲
+            │       │            ╲
+feature/a   ╰──●───●╯              (merged via PR)
+                            ╲
+feature/b                   ╰──●───●  (in progress)
+```
+
+- `master` (or `main`) is always deployable
+- `feature/*` branches are short-lived
 - Open a PR → review → merge → delete branch
 
 This is what most modern teams use. Our lab uses this.
 
 ### Trunk-Based Development
-- Everyone commits to `master`/`trunk` directly
-- Heavy automated testing
-- Feature flags hide incomplete features
 
-Used by Google, Facebook. Requires mature CI/CD.
+Everyone commits to `master` directly. Heavy automated testing. Feature flags hide incomplete features.
 
-## 3.5 Pull Requests (PRs)
+Used by Google, Meta. Requires mature CI/CD and culture.
 
-A PR is a request to merge changes from one branch into another. The PR page:
-- Shows the diff
-- Runs CI (tests, lint, scans)
-- Has a discussion thread
-- Requires approvals (configurable)
+---
 
-**Why PRs matter:** They're the gate between work and production. Reviews catch bugs. CI catches regressions. They create an audit trail.
+## 3.5 Pull Requests
+
+### Concept
+
+A **Pull Request** (PR) — also called Merge Request in GitLab — is a web UI workflow for proposing changes from one branch into another. It's not part of Git itself; GitHub/GitLab add this layer.
+
+A PR page contains:
+
+- The diff (what changed)
+- CI status (tests pass/fail)
+- Comments on specific lines
+- Review approvals
+- Merge controls
+
+### Why PRs matter
+
+PRs are the gate between work and production:
+
+- **Code review** catches bugs and improves quality
+- **CI** catches regressions automatically
+- **Approvals** create accountability
+- **Audit trail** for compliance
+
+A team without PRs deploys whatever anyone wrote. A team with PRs has guardrails.
+
+### Anatomy of a good PR
+
+```
+Title:        Brief, imperative mood ("Add user search" not "Added user search")
+
+Description:  ## Summary
+              What this PR does in 2-3 sentences.
+
+              ## Why
+              Why this change is needed. Link to ticket if applicable.
+
+              ## How to test
+              Step-by-step verification.
+
+              ## Risks
+              What might go wrong. Migration concerns.
+
+Diff size:    Small. 300-400 lines of real code max.
+              Big PRs get bad reviews.
+```
+
+---
 
 ## 3.6 Merge conflicts
 
-When two branches changed the same line, git can't auto-merge. Resolution:
+### Concept
 
-```bash
-git pull --rebase origin master
-# CONFLICT in file.txt
+When two branches changed the same line, Git can't decide which version to keep. You decide.
 
-# Edit file.txt — find conflict markers:
-# <<<<<<< HEAD
-# your version
-# =======
-# their version
-# >>>>>>> commit-sha
+### What a conflict looks like
 
-# Pick one, save the file
-git add file.txt
-git rebase --continue
+When you `git pull --rebase` or `git merge` and there's a conflict, Git modifies the file with markers:
+
+```python
+def get_user(user_id):
+<<<<<<< HEAD
+    # Your version
+    return db.users.find_one({"id": user_id})
+=======
+    # Their version (from the branch being merged)
+    return User.objects.get(pk=user_id)
+>>>>>>> commit-sha
 ```
 
-You'll hit this constantly when multiple people work on the same repo. Our lab hit this many times when GitHub Actions' bot commits conflicted with local commits.
+Three options:
+
+1. Keep yours: delete their version + markers
+2. Keep theirs: delete your version + markers
+3. Combine: write a new version that takes both into account
+
+### Resolving conflicts
+
+```bash
+# After conflict during pull/merge/rebase:
+
+git status                                  # see conflicting files
+# Edit each conflicted file. Remove <<<<<<<, =======, >>>>>>> markers.
+
+git add file.py                             # mark as resolved
+git diff --name-only --diff-filter=U        # any remaining conflicts?
+
+git rebase --continue                       # if rebasing
+git merge --continue                        # if merging
+
+# To abort and try again:
+git rebase --abort                          # or
+git merge --abort
+```
+
+### Tips for fewer conflicts
+
+- Keep branches short-lived (1-3 days max)
+- Pull from master frequently (`git pull --rebase origin master`)
+- Communicate when working in the same area of the code
+- Small PRs merge fast, before conflicts develop
+
+---
 
 ## 3.7 Rewriting history (carefully)
 
+### Concept
+
+Git lets you rewrite history with several commands. **All of them are dangerous on shared branches.**
+
+### The commands
+
 ```bash
-git commit --amend              # change last commit message or add files
-git reset HEAD~1                # undo last commit, keep changes staged
-git reset --hard HEAD~1         # ⚠️  undo last commit, lose changes
-git rebase -i HEAD~5            # interactive rebase: squash, reorder, edit
-git revert <commit>             # create new commit that undoes <commit>
+git commit --amend                # change last commit (message or contents)
+git reset HEAD~1                  # undo last commit, keep changes staged
+git reset --hard HEAD~1           # ⚠ undo last commit, LOSE changes
+git rebase -i HEAD~5              # interactive: squash, reorder, edit
+git revert <commit>               # create NEW commit that undoes <commit>
 ```
 
-**Rule:** Never rewrite history that's been pushed to a shared branch. Use `revert` for shared work, `reset`/`rebase` only for local branches.
+### The cardinal rule
+
+**Never rewrite history that's been pushed to a shared branch.**
+
+Why: if I have your old commit `abc1234` and you rewrite it to `def5678`, my local repo doesn't know — it sees `abc1234` as missing and refuses to push. We've diverged. Painful to fix.
+
+For shared work, use `git revert` (creates a new commit that undoes the change).
+
+### When rewriting is safe
+
+- On your local branches before pushing
+- Before opening a PR, to clean up history
+- After someone else's review, to address feedback in a single commit
+
+### Common pattern: clean up before push
+
+```bash
+# Make 5 commits while developing
+git commit -m "wip: try x"
+git commit -m "wip: still trying"
+git commit -m "wip: finally got it"
+git commit -m "fix typo"
+git commit -m "fix another typo"
+
+# Before pushing, squash into one clean commit
+git rebase -i HEAD~5
+# In the editor, mark commits to "squash" or "fixup"
+# Save. Git presents a merged commit message editor.
+
+# Now one clean commit. Push:
+git push origin feature/x
+```
+
+---
 
 ## 3.8 .gitignore
 
-Tells Git which files to ignore:
+### Concept
+
+Some files shouldn't be tracked: build outputs, secrets, IDE settings, local logs. A `.gitignore` file in the repo root tells Git what to skip.
+
+### Common entries
 
 ```gitignore
-# Common patterns
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# Build artifacts
 node_modules/
+__pycache__/
+*.pyc
+dist/
+build/
+
+# Logs
 *.log
+
+# Environment / secrets
 .env
+.env.*
+*.key
+*.pem
+sp-terraform.json
+
+# Terraform
 .terraform/
 *.tfstate
 *.tfstate.backup
+*.tfplan
+
+# OS
+.DS_Store
+Thumbs.db
 ```
 
-Critical for keeping secrets, build artifacts, and machine-specific files out of the repo. Our lab gitignores `sp-terraform.json` (SP credentials).
+### Critical for security
+
+The `.env` and `*.json` exclusions prevent committing secrets accidentally. Our lab's `.gitignore` excludes `sp-terraform.json` (the file with the Service Principal's password).
+
+---
 
 ## 3.9 Git in CI/CD
 
-CI systems do roughly this:
+### Concept
+
+Every CI/CD system uses Git as its source. The pattern is:
 
 ```bash
 git clone <repo>
@@ -434,198 +1250,278 @@ git checkout <branch-or-sha>
 # run tests, build, deploy
 ```
 
-The `<sha>` is the immutable identifier. We use the **short SHA (7 chars)** as our image tag in the lab — guarantees the image matches a specific commit.
+The `<sha>` is the immutable identifier of a specific commit. Even if branches move, the SHA stays the same.
 
-## 3.10 Why this matters in interviews
+### Why we use short SHA as image tags
 
-> "How do you roll back a bad deploy?"
+In our lab, every Docker image is tagged with the git short SHA:
 
-Good answer:
-> "Three layers. Inside the rolling window — Argo Rollouts has the previous ReplicaSet alive for 30 seconds, so `kubectl argo rollouts undo` is instant. Beyond that, `git revert <bump-commit>` and let ArgoCD reconcile — image tags are git SHAs, so reverting the commit means deploying the previous image. Longer term, every deploy is a git commit, so the audit trail makes it easy to identify the bad change and learn from it."
+```
+myacr.azurecr.io/myapp:sha-abc1234
+```
+
+This means:
+
+- **Immutable**: the tag never changes. Once pushed, that image is fixed.
+- **Traceable**: from the image tag, you can find the exact commit, exact diff, exact author.
+- **Rollback is trivial**: revert the bump commit in Git; ArgoCD reconciles back to the previous SHA.
+
+### A useful workflow
+
+```bash
+# 1. Make changes
+git checkout -b feature/x
+# ... edit files ...
+git commit -am "feat: add new endpoint"
+
+# 2. Push and open PR
+git push origin feature/x
+# (open PR on GitHub)
+
+# 3. CI builds image
+# CI runs: docker build -t myacr.azurecr.io/myapp:sha-$(git rev-parse --short=7 HEAD) .
+
+# 4. Deploy commits the new SHA
+# CI runs: 
+#   - Update values-dev.yaml to point at new SHA
+#   - git commit -m "ci(dev): bump to sha-abc1234"
+#   - git push
+
+# 5. ArgoCD detects the commit and applies to cluster.
+
+# To rollback:
+git revert <bump-commit-sha>
+# ArgoCD reconciles back to previous image.
+```
+
+---
+
+## 3.10 Interview talking points
+
+> **Q:** "How would you roll back a bad deploy?"
+>
+> "Three layers depending on how recent the bad deploy is. Within the rolling window — Argo Rollouts keeps the previous ReplicaSet alive for 30 seconds after a promote, so `kubectl argo rollouts undo` is instant. Beyond that window, `git revert <bump-commit>` and let ArgoCD reconcile — image tags are git SHAs, so reverting the commit means deploying the previous image. The longest path: forensics, identify which commit introduced the regression, revert that specific change, redeploy. Every deploy is a Git commit, so the audit trail makes this easy."
+
+> **Q:** "What's your branching strategy?"
+>
+> "GitHub Flow. Short-lived feature branches off master, PR to merge, CI must be green and one approver. Master is always deployable. We don't use a develop branch — over-engineering for our team size. For larger releases, we use feature flags rather than long-lived release branches."
+
+> **Q:** "What if two developers want to work on the same feature?"
+>
+> "Two patterns. Either we split the feature into independent vertical slices that can be merged independently, or we pair-program on the same branch. Long-running shared branches accumulate merge conflicts and slow everyone down. Short PRs that land daily are much easier to coordinate."
+
+---
 
 ## 3.11 Exercises
 
-1. Create a private repo on GitHub
-2. Clone it, make a commit, push it
-3. Create a branch, change something, push the branch
-4. Open a PR on GitHub, review it, merge it
-5. Practice resolving a merge conflict (create one intentionally)
-6. Use `git log --oneline --graph --all` to visualize branch history
-7. Try `git rebase -i HEAD~3` to squash 3 commits into 1
-
-### Visual: Git commit graph
-
-```
-master          A───B───C────────────G───H
-                     \              /
-feature/foo           D───E───F────/
-                          \
-feature/bar               X───Y
-
-  A = initial commit
-  B = added README
-  C = bug fix on master
-  D-F = feature/foo work
-  G = merged feature/foo into master
-  H = latest commit
-  X-Y = work on feature/bar (not yet merged)
-```
-
-### Visual: PR workflow
-
-```
-┌────────────────┐
-│ Developer      │
-│ local branch   │
-│ feature/new-x  │
-└────────┬───────┘
-         │  git push origin feature/new-x
-         ▼
-┌────────────────────────────────────┐
-│ GitHub                             │
-│  feature/new-x branch              │
-│  Open Pull Request                 │
-└────────┬───────────────────────────┘
-         │
-         ▼
-┌────────────────────────────────────┐
-│ Automated checks (CI)              │
-│  • Unit tests                       │
-│  • Linter                           │
-│  • Security scan                    │
-│  • Build                            │
-└────────┬───────────────────────────┘
-         │
-         ▼
-┌────────────────────────────────────┐
-│ Human review                       │
-│  • Approve / Request changes        │
-│  • Comments on specific lines       │
-└────────┬───────────────────────────┘
-         │
-         ▼
-┌────────────────────────────────────┐
-│ Merge to master                    │
-│  Branch deleted                     │
-│  Deploy pipeline triggered          │
-└────────────────────────────────────┘
-```
+1. Create a private repository on GitHub.
+2. Clone it locally, make a commit, push it.
+3. Create a feature branch, change something, push the branch.
+4. Open a PR on GitHub, review it (with yourself), merge it.
+5. Practice resolving a merge conflict — intentionally create one by editing the same line in two branches.
+6. Use `git log --oneline --graph --all` to visualize branch history.
+7. Try `git rebase -i HEAD~3` to squash 3 commits into 1.
+8. Configure your `.gitconfig` with useful aliases:
+   ```bash
+   git config --global alias.lg "log --oneline --graph --all"
+   git config --global alias.st "status"
+   git config --global alias.co "checkout"
+   git config --global alias.br "branch"
+   ```
+9. Read your colleagues' PRs on a real project (or any open-source project on GitHub).
 
 ---
 
 # Chapter 4: Networking Essentials
 
-You can't operate distributed systems without understanding networking. Master these concepts.
+## 4.1 Why networking matters
 
-## 4.1 The OSI model (simplified)
+### Concept
 
-```
-┌─────────────────────────────────────────┐
-│ Layer 7: Application   (HTTP, gRPC, SSH) │  ← Where you code
-├─────────────────────────────────────────┤
-│ Layer 6: Presentation  (TLS encryption)  │
-├─────────────────────────────────────────┤
-│ Layer 5: Session                         │
-├─────────────────────────────────────────┤
-│ Layer 4: Transport     (TCP, UDP)        │  ← Ports live here
-├─────────────────────────────────────────┤
-│ Layer 3: Network       (IP, routing)     │  ← IP addresses
-├─────────────────────────────────────────┤
-│ Layer 2: Data Link     (Ethernet)        │  ← MAC addresses
-├─────────────────────────────────────────┤
-│ Layer 1: Physical      (cables, radio)   │
-└─────────────────────────────────────────┘
-```
+You cannot operate distributed systems without understanding networking. Cloud infrastructure is networking. Kubernetes is networking. Service meshes are networking.
 
-In practice, you'll talk about **L4** (TCP load balancers) and **L7** (HTTP proxies, ingress controllers).
+This chapter covers the layer-by-layer model and the concepts you'll actually use daily.
 
-## 4.2 IP addresses and CIDR
+## 4.2 The OSI model (simplified)
 
-An IPv4 address is 32 bits: `10.0.1.15` = four octets.
+### Concept
 
-**CIDR notation** says how many bits are the network prefix:
-- `10.0.0.0/16` — first 16 bits fixed, last 16 bits available = 65,536 IPs
-- `10.0.1.0/24` — first 24 bits fixed = 256 IPs
-- `10.0.1.0/27` — first 27 bits fixed = 32 IPs
+The OSI model is a 7-layer abstraction of how data moves between computers. In practice, platform engineers talk about layers 3, 4, and 7.
 
 ```
-CIDR        Bits    Addresses    Use case
-─────────────────────────────────────────────────────
-/8          24      16,777,216   Internet ranges
-/16         16      65,536       VNet
-/24         8       256          Subnet
-/27         5       32           Small subnet (mgmt)
-/32         0       1            Single host
+┌──────────────────────────────────────────────────────────┐
+│ Layer 7: Application      (HTTP, gRPC, SSH)              │  ← Where you code
+├──────────────────────────────────────────────────────────┤
+│ Layer 6: Presentation     (TLS encryption)               │
+├──────────────────────────────────────────────────────────┤
+│ Layer 5: Session                                         │
+├──────────────────────────────────────────────────────────┤
+│ Layer 4: Transport        (TCP, UDP)                     │  ← Ports live here
+├──────────────────────────────────────────────────────────┤
+│ Layer 3: Network          (IP, routing)                  │  ← IP addresses
+├──────────────────────────────────────────────────────────┤
+│ Layer 2: Data Link        (Ethernet)                     │  ← MAC addresses
+├──────────────────────────────────────────────────────────┤
+│ Layer 1: Physical         (cables, radio)                │
+└──────────────────────────────────────────────────────────┘
 ```
 
-Our lab VNet:
+The L4/L7 distinction comes up constantly:
+
+- **L4 load balancer** — operates on TCP/UDP, no understanding of HTTP
+- **L7 load balancer** — understands HTTP, can route by URL, header, etc.
+
+Azure Load Balancer is L4. Application Gateway is L7. Istio's ingress gateway is L7.
+
+## 4.3 IP addresses and CIDR
+
+### Concept
+
+An **IPv4 address** is 32 bits, usually written as four decimal octets: `10.0.1.15`.
+
+**CIDR notation** (Classless Inter-Domain Routing) compactly describes a range: `10.0.0.0/16` means the first 16 bits are fixed, the last 16 bits are available for hosts = 65,536 addresses.
+
+### How CIDR sizing works
+
+The number after `/` is the prefix length. Larger `/N` = smaller range:
+
 ```
-gskplat-vnet-shared  10.0.0.0/16    65,536 IPs total
-├── snet-aks         10.0.1.0/24    256 IPs (cluster nodes)
-├── snet-apps        10.0.2.0/24    256 IPs (future apps)
-└── snet-mgmt        10.0.3.0/27    32 IPs (jumpbox/mgmt)
-```
-
-## 4.3 Public vs Private IPs
-
-```
-Private IP ranges (RFC 1918):
-  10.0.0.0/8      — most common in cloud VNets
-  172.16.0.0/12   — Docker default
-  192.168.0.0/16  — home routers
-
-Public IPs:
-  Everything else. Globally routable on the internet.
-```
-
-VMs in a VNet get private IPs. To reach the internet, they need either:
-- A **NAT gateway** (translates private→public outbound)
-- A **public IP** attached directly
-- Through a **load balancer**
-
-## 4.4 DNS
-
-DNS maps names to IPs:
-```
-api.example.com  ───►  resolved to  ───►  20.94.18.66
+CIDR        Bits free    Addresses        Common use
+─────────────────────────────────────────────────────────────
+/8          24           16,777,216       Internet ranges
+/16         16           65,536           VNet
+/24         8            256              Subnet
+/27         5            32               Small subnet (mgmt)
+/30         2            4                Point-to-point
+/32         0            1                Single host
 ```
 
-Types of DNS records:
+In Azure, AWS, GCP, you'll usually work in `/16` for VNets and `/24` or `/27` for subnets.
+
+### Our lab's networking
+
+```
+VNet: gskplat-vnet-shared     10.0.0.0/16   (65,536 IPs total)
+  │
+  ├── snet-aks                10.0.1.0/24   (256 IPs - cluster nodes)
+  ├── snet-apps                10.0.2.0/24   (256 IPs - future apps)
+  └── snet-mgmt                10.0.3.0/27   (32 IPs - jumpbox/mgmt)
+```
+
+The `/16` VNet has room for ~256 `/24` subnets. We use 3.
+
+## 4.4 Public vs Private IPs
+
+### Concept
+
+Private IP ranges (RFC 1918) are non-routable on the public internet. They're for internal networks:
+
+```
+10.0.0.0/8       Common in cloud VNets
+172.16.0.0/12    Docker default
+192.168.0.0/16   Home routers
+```
+
+Everything else is public — globally routable.
+
+### How private IPs reach the internet
+
+A VM in a private subnet can't be reached from the internet (no route). To reach the internet outbound, it needs:
+
+- **NAT Gateway** (cloud-managed) — translates many private IPs to a few public IPs
+- **Public IP directly attached** to the VM
+- **Through a Load Balancer** with a public IP
+
+For inbound traffic from the internet, you need:
+
+- A public IP attached to the resource
+- A Load Balancer or App Gateway in front
+
+## 4.5 DNS
+
+### Concept
+
+DNS (Domain Name System) maps human-friendly names to IP addresses.
+
+```
+You type:        api.example.com
+DNS returns:     20.94.18.66
+Your browser:    connects to 20.94.18.66
+```
+
+### Common record types
+
 | Type | Maps to | Example |
 |---|---|---|
-| A | IPv4 | `example.com → 1.2.3.4` |
-| AAAA | IPv6 | `example.com → ::1` |
-| CNAME | Another domain | `www.example.com → example.com` |
-| MX | Mail server | `example.com → mail.example.com` |
-| TXT | Text (used for verification) | `_acme-challenge.example.com → "abc123"` |
+| **A** | IPv4 address | `example.com → 1.2.3.4` |
+| **AAAA** | IPv6 address | `example.com → 2001:db8::1` |
+| **CNAME** | Another domain | `www.example.com → example.com` |
+| **MX** | Mail server | `example.com → mail.example.com` (priority 10) |
+| **TXT** | Text records (verification) | `_acme-challenge.example.com → "abc123"` |
 
-**Inside Kubernetes:** CoreDNS resolves service names. `backend.dev.svc.cluster.local` resolves to the backend Service's ClusterIP.
+### DNS in Kubernetes
 
-## 4.5 TCP/UDP and ports
-
-A **port** is a number (0-65535) that identifies which application on a host gets the traffic.
+Every Kubernetes cluster runs **CoreDNS** internally. It resolves Service names to ClusterIPs:
 
 ```
-Connection format: <ip>:<port>
-  Web server     :  80 (HTTP), 443 (HTTPS)
-  SSH            :  22
-  PostgreSQL     :  5432
-  Kubernetes API :  6443
-  Our backend    :  5678
+backend.dev.svc.cluster.local
+   │
+   ▼
+ClusterIP: 172.16.140.23
 ```
 
-**TCP** (Transmission Control Protocol):
-- Reliable, ordered, connection-oriented
-- 3-way handshake (SYN → SYN-ACK → ACK)
-- Used for HTTP, SSH, databases
+Format: `<service>.<namespace>.svc.cluster.local`
 
-**UDP** (User Datagram Protocol):
-- Best-effort, no connection
-- Used for DNS queries, streaming, real-time games
+Pods in the same namespace can use the short form `backend`. Cross-namespace requires the namespace prefix: `backend.prod`.
 
-## 4.6 Firewalls and NSGs
+## 4.6 TCP and UDP, ports
 
-A firewall filters traffic based on rules. Rules typically have:
+### Concept
+
+A **port** is a 16-bit number (0-65535) identifying a specific application on a host. Combined with the IP address, it uniquely identifies an endpoint.
+
+### TCP vs UDP
+
+```
+┌──────────────────────────────┬──────────────────────────────┐
+│ TCP                          │ UDP                          │
+├──────────────────────────────┼──────────────────────────────┤
+│ Connection-oriented          │ Connectionless               │
+│ Reliable, ordered            │ Best-effort, unordered       │
+│ 3-way handshake              │ Just send                    │
+│ Slower (more overhead)       │ Faster (less overhead)       │
+│                              │                              │
+│ Used by:                     │ Used by:                     │
+│   HTTP/HTTPS                 │   DNS queries                │
+│   SSH                        │   Streaming media            │
+│   Databases                  │   VPN                        │
+│   git                        │   Game traffic               │
+└──────────────────────────────┴──────────────────────────────┘
+```
+
+### Common ports to memorize
+
+| Port | Protocol | Service |
+|---|---|---|
+| 22 | TCP | SSH |
+| 80 | TCP | HTTP |
+| 443 | TCP | HTTPS |
+| 3306 | TCP | MySQL |
+| 5432 | TCP | PostgreSQL |
+| 5678 | TCP | (our backend) |
+| 6379 | TCP | Redis |
+| 6443 | TCP | Kubernetes API server |
+| 9090 | TCP | Prometheus |
+| 53 | UDP | DNS |
+
+Ports below 1024 require root to bind. Use 1024+ for user-mode apps.
+
+## 4.7 Firewalls and NSGs
+
+### Concept
+
+A **firewall** filters network traffic based on rules. Each rule has:
+
 - Source IP/range
 - Destination IP/range
 - Port
@@ -633,290 +1529,548 @@ A firewall filters traffic based on rules. Rules typically have:
 - Action (Allow/Deny)
 - Priority
 
-Azure's **Network Security Group (NSG)** is a stateful firewall attached to subnets or NICs.
+Azure's **Network Security Group** (NSG) is a stateful firewall attached to subnets or NICs. "Stateful" means return traffic for an allowed connection is automatically allowed.
 
-### Default NSG rules (Azure)
-```
-Priority  Name                          Source       Dest    Port   Action
-─────────────────────────────────────────────────────────────────────────
-65000     AllowVnetInBound              VirtualNet   *       *      Allow
-65001     AllowAzureLoadBalancerInBound AzureLB      *       *      Allow
-65500     DenyAllInBound                *            *       *      Deny
-```
+### Azure's default rules
 
-These are **implicit**. If you add an explicit rule at priority 4000 to "deny all", you shadow the implicit allows — exactly what broke our lab in iter 4 until we added explicit `AllowVnetInbound` (1000) and `AllowAzureLoadBalancerInbound` (1100) rules.
-
-### Visual: NSG rule evaluation
+When you create an NSG, Azure includes these implicit rules at priority 65000+:
 
 ```
-Incoming packet from 10.0.1.5 to 10.0.2.10:80
+Priority   Name                              Source        Dest    Port   Action
+────────────────────────────────────────────────────────────────────────────────
+65000      AllowVnetInBound                  VirtualNet    *       *      Allow
+65001      AllowAzureLoadBalancerInBound     AzureLB       *       *      Allow
+65500      DenyAllInBound                    *             *       *      Deny
+```
+
+These mean: cluster-internal traffic is allowed; Azure load balancer health probes are allowed; everything else is denied.
+
+### The explicit deny gotcha
+
+If you add your own explicit rule at a LOWER priority number (higher priority), it fires FIRST and can shadow the implicit allows.
+
+**Our lab broke in iter 4 because of this.** We added:
+
+```hcl
+security_rule {
+  name     = "DenyAllInboundExplicit"
+  priority = 4000              # ← lower number = higher priority
+  access   = "Deny"
+  # ... source/dest *, port *, etc ...
+}
+```
+
+This explicit Deny at priority 4000 fired BEFORE the implicit `AllowVnetInBound` at 65000. Result: pod-to-pod traffic across nodes died.
+
+**The fix:** explicit allows BEFORE the explicit deny.
+
+```hcl
+security_rule {
+  name     = "AllowVnetInbound"
+  priority = 1000             # higher priority than the deny
+  access   = "Allow"
+  source_address_prefix = "VirtualNetwork"
+}
+
+security_rule {
+  name     = "AllowAzureLoadBalancerInbound"
+  priority = 1100
+  access   = "Allow"
+  source_address_prefix = "AzureLoadBalancer"
+}
+
+security_rule {
+  name     = "DenyAllInboundExplicit"
+  priority = 4000             # fires AFTER the allows
+  access   = "Deny"
+}
+```
+
+### How NSG rules are evaluated
+
+```
+Incoming packet
        │
        ▼
-Check rule by priority (lowest first):
-       │
-       ├─ Priority 1000: AllowVnetInbound — MATCH → ALLOW
-       │  (stop checking)
+Check rules in priority order (lowest number first):
+   priority 1000  AllowVnetInbound          → MATCH → ALLOW (stop here)
+   priority 1100  AllowAzureLBInbound       → no match, continue
+   priority 4000  DenyAllInboundExplicit    → no match (allow already won)
+   priority 65000 AllowVnetInBound          → (Azure implicit, never reached)
        │
        ▼
-Packet is allowed through
+Packet allowed
 ```
 
-## 4.7 Load Balancers
+The first matching rule wins. Lower priority numbers are evaluated first.
 
-A load balancer distributes incoming connections across multiple backend instances.
+## 4.8 Load Balancers
+
+### Concept
+
+A load balancer distributes incoming connections across multiple backend instances. The two flavors:
+
+- **L4 LB** — distributes TCP/UDP. Doesn't understand HTTP. Fast.
+- **L7 LB** — understands HTTP. Can route by URL path, header, host. Adds features like TLS termination, sticky sessions, retries.
+
+### Visual
 
 ```
-                  Public IP: 20.94.18.66
-                          │
-                          ▼
-                  ┌───────────────┐
-                  │ Load Balancer │
-                  └───────┬───────┘
-                          │
-        ┌─────────────────┼─────────────────┐
-        ▼                 ▼                 ▼
-   ┌─────────┐       ┌─────────┐       ┌─────────┐
-   │ Backend │       │ Backend │       │ Backend │
-   │ Pod 1   │       │ Pod 2   │       │ Pod 3   │
-   └─────────┘       └─────────┘       └─────────┘
+                 Internet
+                    │
+                    ▼
+            Public IP: 20.94.18.66
+                    │
+                    ▼
+            ┌───────────────┐
+            │ Load Balancer │  L4 or L7
+            └───────┬───────┘
+                    │
+        ┌───────────┼───────────┐
+        ▼           ▼           ▼
+   ┌────────┐  ┌────────┐  ┌────────┐
+   │ Backend│  │ Backend│  │ Backend│
+   │ Pod 1  │  │ Pod 2  │  │ Pod 3  │
+   └────────┘  └────────┘  └────────┘
 ```
 
-Types:
-- **L4 Load Balancer** — operates on TCP/UDP, no understanding of HTTP
-- **L7 Load Balancer** — understands HTTP, can route by URL/headers (also called Application Gateway)
+The LB has the public IP. Backend pods have private IPs the LB knows about.
 
-Azure Load Balancer = L4. Azure Application Gateway = L7. Istio ingress gateway = L7 (in our lab).
+### In our lab
 
-## 4.8 TLS/HTTPS
+We have a public LB (Azure Standard Load Balancer) at `20.94.18.66`. It points at the Istio ingress gateway, which then routes L7 to internal Services based on Host header and URL path.
 
-HTTPS = HTTP over TLS (Transport Layer Security). TLS provides:
+## 4.9 TLS and HTTPS
+
+### Concept
+
+**TLS** (Transport Layer Security) provides:
+
 - **Encryption** — eavesdroppers can't read traffic
-- **Authentication** — verify you're talking to the real server
+- **Authentication** — verify the server is who it claims
 - **Integrity** — detect tampering
 
-The TLS handshake (simplified):
+HTTPS is HTTP over TLS.
+
+### The TLS handshake
+
 ```
-Client                                      Server
-  │                                            │
-  │── ClientHello (supported ciphers) ────────►│
-  │                                            │
-  │◄─── ServerHello + Certificate ─────────────│
-  │                                            │
-  │  (verify cert against trusted CA list)     │
-  │                                            │
-  │── Generate session key, encrypt with ─────►│
-  │   server's public key                      │
-  │                                            │
-  │◄═══ Encrypted application data ═══════════►│
+Client                                          Server
+  │                                                │
+  │── ClientHello (supported ciphers, version) ───►│
+  │                                                │
+  │◄── ServerHello + Certificate ──────────────────│
+  │                                                │
+  │  Verify cert against trusted CA list           │
+  │                                                │
+  │── Generate session key, encrypt with ─────────►│
+  │   server's public key                          │
+  │                                                │
+  │◄═══ Encrypted application data ═══════════════►│
 ```
 
-**mTLS** = mutual TLS. Client also presents a certificate. Used in service meshes for service-to-service auth. Istio does this by default.
+### Certificates
 
-## 4.9 Why this matters in interviews
+A certificate proves the server's identity. It's signed by a Certificate Authority (CA) that the client trusts.
 
-> "How does traffic flow from the internet to a Pod?"
+For public sites, free CAs like Let's Encrypt issue certs after verifying you control the domain (DNS or HTTP challenge).
 
-Good answer:
-> "Internet → Azure Load Balancer (L4) at the public IP → istio-ingress Service (NodePort) → istio-ingress Pod (Envoy at L7) → matches a VirtualService by Host header → forwards to the destination Service's ClusterIP → CoreDNS resolves to a Pod IP → kube-proxy load-balances across Pod IPs of that Service → the request lands on the Pod, passes through its istio-proxy sidecar (mTLS termination), then hits the app container."
+Tools to manage certs in Kubernetes:
 
-## 4.10 Exercises
+- **cert-manager** — issues and auto-renews certs from any ACME-compatible CA
+- **Azure Key Vault** integration — store certs in KV, mount in pods
 
-1. Use `ping`, `traceroute`, `dig`, `nslookup` against common domains
-2. `nc -zv google.com 443` — test if a port is open
-3. `curl -v https://example.com` — see the TLS handshake details
-4. Calculate available IPs for `/24`, `/27`, `/30`
-5. Read your laptop's `route -n` table
+### mTLS (mutual TLS)
+
+In normal TLS, the server proves its identity, the client doesn't. In **mutual TLS** (mTLS), both sides present certificates and verify each other.
+
+Why: service-to-service inside the cluster. The frontend pod proving it's the frontend pod, not a malicious replacement. Istio does this by default.
+
+Two modes in Istio:
+
+- **PERMISSIVE** — accepts both plain TCP and mTLS. Used during sidecar rollout.
+- **STRICT** — accepts only mTLS. Production target.
+
+Our lab uses PERMISSIVE because the Postgres pod opts out of sidecar injection (and would be unreachable with STRICT).
+
+## 4.10 Interview talking points
+
+> **Q:** "Walk me through what happens when a user hits dev.lvh.me:59999 in their browser."
+>
+> "Public DNS for `dev.lvh.me` resolves to 127.0.0.1 (lvh.me does that for any subdomain). Browser connects to `127.0.0.1:59999`. SSH LocalForward in their SSH config catches that, tunnels through SSH to the VM, where `kubectl port-forward` is listening on `9999:80`. That forwards to the Istio ingress Service, which forwards to the istio-ingress pod (Envoy). Envoy sees the Host header `dev.lvh.me`, matches the dev VirtualService, routes to the frontend or backend Service depending on URL path. Service forwards to a pod, which has an istio-proxy sidecar handling mTLS. The sidecar forwards to the app container on localhost. Response goes back through the same chain. Ten hops, encrypted at multiple layers."
+
+> **Q:** "Why did adding a Deny rule break a working cluster?"
+>
+> "Azure has implicit Allow rules at priority 65000 for VNet-internal traffic and 65001 for load balancer health probes. Adding an explicit Deny at a lower priority number — say 4000 — fires first because lower number means higher priority. The Deny shadows the implicit allows. Pod-to-pod traffic across nodes dies. Health probes fail. The fix: explicit Allow rules at priority 1000 and 1100 for VNet and AzureLoadBalancer respectively, BEFORE the explicit Deny."
+
+## 4.11 Exercises
+
+1. Use `ping`, `traceroute`, `dig` against common domains. See the IPs.
+2. `nc -zv google.com 443` — test if a port is open.
+3. `curl -v https://example.com` — see the TLS handshake details.
+4. Calculate available IPs for `/24`, `/27`, `/30`. Write them out.
+5. Read your laptop's routing table: `route -n` (Linux) or `route print` (Windows).
+6. Use `ss -tlnp` to see what's listening on TCP on your machine.
 
 ---
 
 # Chapter 5: Containers and Docker
 
-## 5.1 What problem do containers solve?
+## 5.1 The problem containers solve
+
+### Concept
 
 Before containers, deploying an app meant:
-- Install the OS
-- Install language runtime (Python, Node, etc.)
-- Install dependencies (libraries, system packages)
-- Copy your code
-- Configure environment variables
-- Start the process
-- Repeat on every server
 
-This led to:
-- "Works on my machine" syndrome
+1. Install OS
+2. Install language runtime (Python, Node, etc.)
+3. Install dependencies (system packages, libraries)
+4. Copy your code
+5. Configure environment variables
+6. Start the process
+7. Repeat on every server
+
+Result:
+
+- "Works on my machine" — your dev env doesn't match prod
 - Hours wasted on environment drift
-- Painful onboarding
+- Painful onboarding (new dev = days of setup)
 - Hard to reproduce production locally
 
-A **container** packages the app + all its dependencies into a portable image. Run the image anywhere → identical behavior.
+### How containers solve it
+
+A **container** packages the app + all its dependencies (runtime, libraries, system packages, env vars) into a portable image. Run the image anywhere → identical behavior.
+
+```
+Build once:    docker build -t myapp:1.0 .
+Run anywhere:  docker run myapp:1.0
+               docker run myacr.azurecr.io/myapp:1.0
+               kubectl create deployment ... --image=myacr.azurecr.io/myapp:1.0
+```
+
+Same bytes everywhere.
 
 ## 5.2 VMs vs Containers
 
+### Concept
+
+VMs and containers both provide isolation, but at different levels.
+
 ```
-┌─────────────────────────┐     ┌─────────────────────────┐
-│         VM model        │     │   Container model       │
-├─────────────────────────┤     ├─────────────────────────┤
-│  App                    │     │  App │ App │ App        │
-├─────────────────────────┤     ├─────────────────────────┤
-│  Libs / runtime         │     │  Libs │ Libs │ Libs     │
-├─────────────────────────┤     ├─────────────────────────┤
-│  Guest OS (full Linux)  │     │  Container runtime      │
-├─────────────────────────┤     ├─────────────────────────┤
-│  Hypervisor             │     │  Host OS                │
-├─────────────────────────┤     ├─────────────────────────┤
-│  Host OS                │     │  Hardware               │
-├─────────────────────────┤     └─────────────────────────┘
-│  Hardware               │
-└─────────────────────────┘
+┌────────────────────────────┐  ┌──────────────────────────────┐
+│  VM model                  │  │  Container model              │
+├────────────────────────────┤  ├──────────────────────────────┤
+│  App                       │  │  App │ App │ App              │
+├────────────────────────────┤  ├──────────────────────────────┤
+│  Libs / runtime            │  │  Libs│Libs │Libs              │
+├────────────────────────────┤  ├──────────────────────────────┤
+│  Guest OS (full Linux)     │  │  Container runtime            │
+├────────────────────────────┤  ├──────────────────────────────┤
+│  Hypervisor                │  │  Host OS                      │
+├────────────────────────────┤  ├──────────────────────────────┤
+│  Host OS                   │  │  Hardware                     │
+├────────────────────────────┤  └──────────────────────────────┘
+│  Hardware                  │
+└────────────────────────────┘
 
-VM size: GB                     Container size: MB
-VM boot: minutes                Container start: seconds
-Isolation: hardware             Isolation: kernel namespaces
+VM size: 1-10 GB              Container size: 5-500 MB
+VM boot: 30-120 seconds        Container start: 0.1-2 seconds
+VM isolation: hardware         Container isolation: kernel namespaces
 ```
 
-## 5.3 How containers work (the technical bits)
+### The key difference
 
-A container uses Linux kernel features:
-- **Namespaces** — isolate what processes can see (PID, network, mount, user, IPC, UTS)
-- **Cgroups** — limit CPU, memory, I/O
-- **Union filesystems** — layer filesystem changes efficiently (overlayFS)
+A VM has a **separate kernel**. A container shares the host kernel and uses kernel features (namespaces, cgroups) for isolation.
 
-A container is just a process on the host, isolated by these kernel features. There's no "container layer" running — it's all kernel-level.
+This makes containers:
+
+- **Faster** to start (no kernel boot)
+- **Smaller** in size (no OS to ship)
+- **Lighter** in resource use
+- **Less isolated** (kernel exploits could compromise containers)
+
+For most workloads, the speed and density benefits outweigh the slightly weaker isolation.
+
+## 5.3 How containers actually work
+
+### Linux features
+
+Containers use three Linux kernel features:
+
+**Namespaces** — isolate what processes can see. Six types:
+
+| Namespace | Isolates |
+|---|---|
+| `pid` | Process IDs (container sees its own PID 1) |
+| `net` | Network interfaces (each container has its own) |
+| `mnt` | Mount points (filesystem view) |
+| `user` | User and group IDs |
+| `ipc` | Inter-process communication |
+| `uts` | Hostname |
+
+**Cgroups (control groups)** — limit resource usage:
+
+- CPU (shares, quotas)
+- Memory (limit, OOM behavior)
+- I/O (bandwidth, IOPS)
+- Network bandwidth
+
+**Union filesystems** — layer filesystem changes efficiently. The container sees a unified view; the underlying storage is layered.
+
+### A container is just a process
+
+There's no "container daemon" running. A container is a process (or group of processes) isolated by the above kernel features.
+
+```bash
+ps -ef         # see the container processes on the host
+```
+
+The container runtime (containerd, CRI-O, Docker) just sets up the namespaces and cgroups, then starts the process.
 
 ## 5.4 Docker concepts
 
+### The Docker workflow
+
 ```
-Dockerfile  ──── docker build ────►  Image  ──── docker run ────►  Container
-                                        │
-                                        └─── docker push ──────►  Registry (ACR, Docker Hub, ECR)
+Dockerfile  ───── docker build ─────►  Image
+                                          │
+                                          │  docker run
+                                          ▼
+                                      Container
+
+         docker push                       
+              │                            
+              ▼                            
+         Registry  (Docker Hub, ACR, ECR)  
 ```
+
+### Terminology
 
 | Term | Definition |
 |---|---|
-| **Image** | A read-only template (layers of files + metadata) |
-| **Container** | A running instance of an image (writable layer on top) |
+| **Image** | A read-only template (filesystem layers + metadata) |
+| **Container** | A running instance of an image |
 | **Dockerfile** | Instructions to build an image |
-| **Registry** | Storage for images (Docker Hub, ACR, ECR) |
-| **Tag** | Label on an image, like `nginx:1.28-alpine` |
-| **Layer** | One step in an image build (each Dockerfile line is a layer, cached) |
+| **Registry** | A storage service for images |
+| **Tag** | A human label for an image, like `nginx:1.28-alpine` |
+| **Layer** | One step in an image build (each Dockerfile line is a layer) |
+| **Digest** | A SHA-256 hash uniquely identifying an image's contents |
 
 ## 5.5 Dockerfile anatomy
 
-Our backend's Dockerfile (annotated):
+### Concept
+
+A `Dockerfile` is a text file with instructions to build an image. Each instruction creates a layer.
+
+### Our backend's Dockerfile, annotated
 
 ```dockerfile
 # Stage 1: install dependencies in builder
 FROM node:20-alpine3.22 AS deps        # base image (small Linux + Node 20)
-WORKDIR /app                           # cwd for subsequent commands
-COPY package.json package-lock.json ./ # copy from build context
-RUN npm ci --omit=dev --no-audit       # install prod deps only
+WORKDIR /app                           # working directory for commands
+COPY package.json package-lock.json ./ # copy deps manifests
+RUN npm ci --omit=dev --no-audit       # install prod-only deps
 
 # Stage 2: minimal runtime image
 FROM node:20-alpine3.22 AS runtime
 WORKDIR /app
-USER node                              # don't run as root
+USER node                              # run as non-root user
+
 COPY --chown=node:node --from=deps /app/node_modules ./node_modules
 COPY --chown=node:node server.js ./
 
 ENV NODE_ENV=production
 ENV PORT=5678
-EXPOSE 5678                            # documentation, not actual port opening
+EXPOSE 5678                            # documentation: this port is for HTTP
 
 CMD ["node", "server.js"]              # what runs when container starts
 ```
 
-**Why multi-stage?** The final image doesn't include build tools, dev dependencies, or the build cache. Smaller image = faster pull, smaller attack surface.
+### Why multi-stage?
 
-## 5.6 Common Docker commands
+The final image doesn't include build tools, dev dependencies, or the build cache. Smaller image = faster pull, smaller attack surface, fewer CVEs.
+
+```
+Single stage:  base + build tools + source + node_modules + app   ~1 GB
+Multi stage:   base + node_modules + app                          ~150 MB
+```
+
+### Common Dockerfile instructions
+
+| Instruction | Purpose |
+|---|---|
+| `FROM` | Base image |
+| `WORKDIR` | Set working directory |
+| `COPY` | Copy files from build context |
+| `RUN` | Execute command during build |
+| `ENV` | Set environment variable |
+| `EXPOSE` | Document which port the app listens on (informational) |
+| `USER` | Switch to a different user |
+| `CMD` | Default command to run when container starts |
+| `ENTRYPOINT` | Wrap CMD with a fixed prefix |
+| `HEALTHCHECK` | Define a health check command |
+| `LABEL` | Add metadata |
+
+## 5.6 Docker commands you'll use daily
+
+### Building
 
 ```bash
-# Building
-docker build -t myapp:1.0 .
-docker build -t myapp:1.0 --target deps .   # build only the "deps" stage
+docker build -t myapp:1.0 .                  # build from Dockerfile in current dir
+docker build -t myapp:1.0 -f Dockerfile.prod # use a specific Dockerfile
+docker build --target deps -t myapp:deps .   # build only the deps stage
+docker build --no-cache .                    # ignore cache, rebuild everything
+```
 
-# Running
-docker run -p 8080:80 nginx:alpine          # expose port 80 inside as 8080 on host
-docker run -d -p 8080:80 nginx:alpine       # detached (background)
-docker run -e MY_VAR=value nginx            # env var
-docker run -v /host/path:/container/path nginx   # volume mount
-docker run --name webserver -d nginx        # name the container
+### Running
 
-# Inspecting
-docker ps                                   # running containers
-docker ps -a                                # all containers
-docker logs webserver                       # see container output
-docker exec -it webserver sh                # shell into running container
-docker inspect webserver                    # full metadata
+```bash
+docker run nginx:alpine                      # run interactively (foreground)
+docker run -d nginx:alpine                   # detached (background)
+docker run -p 8080:80 nginx:alpine           # expose port 80 inside as 8080 outside
+docker run -e MY_VAR=value nginx             # set env var
+docker run -v /host/path:/container/path nginx   # mount volume
+docker run --name web -d nginx               # name the container
+```
 
-# Cleanup
-docker stop webserver
-docker rm webserver                         # delete stopped container
-docker rmi nginx:alpine                     # delete image
-docker system prune                         # nuke unused stuff
+### Inspecting
+
+```bash
+docker ps                                    # running containers
+docker ps -a                                 # all (including stopped)
+docker logs web                              # see container output
+docker logs -f web                           # follow logs
+docker exec -it web sh                       # shell into running container
+docker inspect web                           # full metadata
+docker stats                                 # live resource use
+```
+
+### Cleanup
+
+```bash
+docker stop web
+docker rm web                                # delete stopped container
+docker rmi nginx:alpine                      # delete image
+docker system prune                          # delete unused stopped containers, networks
+docker system prune -a                       # also delete unused images
 ```
 
 ## 5.7 Image layers and caching
 
-Each Dockerfile instruction creates a layer. Docker caches layers. If line N didn't change, layers ≤ N are reused:
+### How caching works
+
+Each Dockerfile instruction creates a layer. Docker caches layers. If line N didn't change, layers ≤ N are reused.
 
 ```dockerfile
-FROM node:20-alpine         # layer 1 (rarely changes)
-COPY package.json ./        # layer 2 (changes when deps change)
-RUN npm install             # layer 3 (changes only if layer 2 changed)
-COPY . .                    # layer 4 (changes on every code edit)
+FROM node:20-alpine             # layer 1 — rarely changes
+COPY package.json ./            # layer 2 — changes when deps change
+RUN npm install                 # layer 3 — changes when layer 2 changed
+COPY . .                        # layer 4 — changes on every code edit
+RUN npm run build               # layer 5 — changes when layer 4 changed
 ```
 
-**Best practice:** put rarely-changing stuff (deps) BEFORE frequently-changing stuff (code). Maximizes cache hits.
+If you edit `server.js`:
 
-Our pipeline uses kaniko (Jenkins) and buildx (GitHub Actions) for builds. Both push intermediate layers to ACR as a cache.
+- Layer 4 changes (new code)
+- Layer 5 changes (rebuild)
+- Layers 1-3 reuse cache
 
-## 5.8 Images and tags
+Build is fast because npm install is cached.
+
+### Best practice: order layers by frequency of change
 
 ```
-Image reference structure:
-  [registry-host/]username/repo:tag[@digest]
-
-Examples:
-  nginx                                       (defaults to: docker.io/library/nginx:latest)
-  nginx:1.28-alpine                            (Docker Hub, tag 1.28-alpine)
-  gskplatacrn73d5y.azurecr.io/backend:latest   (ACR)
-  nginx@sha256:abcd...                         (by digest, immutable)
+Bottom: rarely changes (base image, OS packages)
+  ↓
+Top: frequently changes (app code)
 ```
 
-**Critical interview point:** `:latest` tag is mutable — what `:latest` points to changes over time. **Use immutable tags** (git SHA, semver) for production. Use digest pins (`@sha256:...`) for ultimate guarantees.
+This maximizes cache hits and minimizes rebuild time.
 
-Our lab moved from `build-N` (BUILD_NUMBER) to `sha-abc1234` (git short SHA) for exactly this reason.
+## 5.8 Image tags and digests
+
+### Tags
+
+A tag is a human-readable label on an image:
+
+```
+nginx                          # defaults to docker.io/library/nginx:latest
+nginx:1.28-alpine              # specific version
+gskplatacrn73d5y.azurecr.io/three-tier/backend:latest   # ACR
+gskplatacrn73d5y.azurecr.io/three-tier/backend:sha-46fa90f  # immutable
+```
+
+Tags are mutable — `nginx:latest` today is different from `nginx:latest` next week.
+
+### Digests
+
+A digest is the cryptographic hash of an image's contents. Immutable.
+
+```
+nginx@sha256:b3a8c7e5d4f2a1b0c9e8d7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6
+```
+
+Two pulls of the same digest are guaranteed identical bytes. Tags can change; digests can't.
+
+### Our lab's approach
+
+We tag images by **git short SHA**:
+
+```
+myacr.azurecr.io/backend:sha-46fa90f
+```
+
+This is mutable (you could re-tag), but in practice we treat it as immutable. The benefits:
+
+- Traceable to the exact commit that produced it
+- Same image SHA flows dev → prod (build-once-deploy-many)
+- Rollback is trivial: change values.yaml back to the previous SHA
+
+Pure production-grade pinning would use the digest directly. Future improvement.
 
 ## 5.9 Container registries
 
-Where images are stored. The big ones:
+### Concept
+
+A **registry** stores Docker images. Push to push them up; pull to download them.
+
+### Major registries
 
 | Registry | Use case |
 |---|---|
-| Docker Hub | Public images, free with rate limits |
-| Azure Container Registry (ACR) | Azure ecosystem, integrates with AKS via managed identity |
-| AWS ECR | AWS ecosystem |
-| GitHub Container Registry (GHCR) | Free for open source, integrates with GitHub Actions |
-| Quay.io | Red Hat ecosystem, supports CVE scanning |
-| Self-hosted Harbor | On-prem |
+| **Docker Hub** | Public images, free tier with rate limits |
+| **Azure Container Registry (ACR)** | Azure-integrated, works with AKS managed identity |
+| **AWS ECR** | AWS-integrated, IAM auth |
+| **GitHub Container Registry (GHCR)** | Free for open source, GitHub Actions integration |
+| **Quay.io** | Red Hat ecosystem, CVE scanning included |
+| **Harbor** | Self-hosted, on-prem |
 
-Authentication:
+### Authentication
+
 ```bash
-docker login mycr.azurecr.io
-# Or via service principal:
-docker login mycr.azurecr.io -u <sp-app-id> -p <sp-secret>
+# Docker Hub
+docker login
+
+# ACR
+az acr login -n myacr
+# or with a service principal:
+docker login myacr.azurecr.io -u $ARM_CLIENT_ID -p $ARM_CLIENT_SECRET
 ```
 
-Our lab uses ACR. Kaniko/buildx use a Service Principal credential stored as a Kubernetes Secret.
+Our lab uses ACR with the kubelet identity having `AcrPull` role — so AKS can pull images without storing credentials.
 
 ## 5.10 Security best practices
+
+### Concept
+
+Containers don't make you secure. They give you tools to be secure. Common practices:
 
 | Practice | Why |
 |---|---|
 | Use specific tags, not `:latest` | Reproducible builds |
-| Run as non-root user (`USER node`) | Limit damage if container is compromised |
+| Run as non-root user (`USER node`) | Principle of least privilege |
 | Multi-stage builds | Smaller images, fewer CVEs |
-| Scan images with Trivy/Snyk | Catch CVEs before deploy |
+| Scan images with Trivy/Snyk | Catch known vulnerabilities |
 | Use distroless or alpine base | Fewer packages = fewer CVEs |
 | Don't bake secrets into images | Use env vars or secret mounts |
 | Sign images with Cosign | Verify origin at deploy time |
@@ -924,24 +2078,32 @@ Our lab uses ACR. Kaniko/buildx use a Service Principal credential stored as a K
 | Drop Linux capabilities | Containers don't need most caps |
 | Set resource limits | Prevent runaway containers |
 
-Our lab does: non-root, multi-stage, Trivy scan, alpine base. Missing: image signing, digest pinning (production gaps).
+Our lab does the first 5. Image signing, capability dropping, and digest pinning are documented production gaps.
 
-## 5.11 Why this matters in interviews
+## 5.11 Interview talking points
 
-> "Walk me through a Dockerfile review."
+> **Q:** "Walk me through a Dockerfile review."
+>
+> "I'd look for: specific base image tag (not latest). Multi-stage build to keep final image small. `USER non-root` for principle of least privilege. Layer ordering — dependencies before code for cache efficiency. `.dockerignore` to keep the build context small. `EXPOSE` and `CMD` clearly defined. Red flags: secrets in `ENV`, `chmod 777`, no `HEALTHCHECK`, `apt-get install` without cleaning `/var/lib/apt/lists/`."
 
-Good answer:
-> "I'd look for: (1) specific base image tag, not latest. (2) Multi-stage build to keep final image small. (3) `USER non-root` for principle of least privilege. (4) Layer ordering — dependencies before code for cache efficiency. (5) `.dockerignore` to keep build context small. (6) `EXPOSE` and `CMD` clearly defined. Red flags: secrets in ENV, `chmod 777`, no health check, `apt-get install` without cleaning `/var/lib/apt/lists/`."
+> **Q:** "How do you keep images small?"
+>
+> "Multi-stage builds. The build stage has the toolchain; the runtime stage has only what's needed to run. For Node apps that's `node:alpine` with just `node_modules`. For Go binaries that can be `scratch` — empty base, only the compiled binary. Layer ordering matters too — put rarely-changing stuff at the top so cache hits stay good."
+
+> **Q:** "Why not just use `:latest` tag?"
+>
+> "`:latest` is mutable. What it points to changes over time. Reproducibility breaks: a deploy that works today might fail tomorrow because `:latest` updated. For production, use immutable tags — semver, git SHA, or digest. We use git short SHA in our lab so every image traces to a specific commit."
 
 ## 5.12 Exercises
 
-1. Install Docker locally (or use Docker Desktop)
-2. Write a Dockerfile for a simple Python script
-3. Build it, run it, expose a port, hit it with curl
-4. Add multi-stage builds
-5. Run `docker history myapp:1.0` and explain each layer
-6. Scan it: `docker scout cves myapp:1.0`
-7. Push to Docker Hub (free account)
+1. Install Docker locally (or use Docker Desktop).
+2. Write a Dockerfile for a simple Python script.
+3. Build it, run it, expose a port, hit it with curl.
+4. Convert it to multi-stage build.
+5. Run `docker history myapp:1.0` and explain each layer.
+6. Scan it: `docker scout cves myapp:1.0` (or use Trivy).
+7. Push to Docker Hub (free account).
+8. Run two containers from the same image with different env vars.
 
 ---
 
@@ -949,15 +2111,27 @@ Good answer:
 
 ## 6.1 What Kubernetes is
 
-Kubernetes (k8s) is a container orchestrator. You declare desired state ("I want 3 copies of this app running, expose port 80, restart if any die"), and Kubernetes makes it happen.
+### Concept
 
-**Why containers + orchestrator?**
-- Manual `docker run` doesn't scale beyond 1 server
-- Need: health checks, restarts, scheduling, load balancing, secrets management, networking between containers, rolling updates
+Kubernetes (k8s) is a **container orchestrator**. You declare what you want ("3 copies of this app, exposed on port 80, restart if any die"). Kubernetes makes it happen and keeps it happening.
 
-Kubernetes solves all of these.
+### Why orchestration?
+
+Manual `docker run` doesn't scale beyond one server:
+
+- Need health checks and automatic restarts
+- Need scheduling — which server runs which container?
+- Need load balancing across container replicas
+- Need secrets and config management
+- Need networking between containers across hosts
+- Need rolling updates without downtime
+- Need autoscaling
+
+Kubernetes solves all of these. It's the de-facto standard.
 
 ## 6.2 The architecture
+
+### Control plane vs nodes
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -978,25 +2152,49 @@ Kubernetes solves all of these.
 ┌─────────────────────────────────────────────────────────────┐
 │                    Worker Nodes                             │
 │  ┌────────────────────────┐  ┌────────────────────────┐     │
-│  │ Node 1                  │  │ Node 2                  │    │
-│  │  kubelet (talks to API) │  │  kubelet                │    │
-│  │  kube-proxy (networking)│  │  kube-proxy             │    │
-│  │  container runtime      │  │  container runtime      │    │
-│  │  (containerd / CRI-O)   │  │                         │    │
-│  │                         │  │                         │    │
-│  │  ┌──────┐  ┌──────┐     │  │  ┌──────┐  ┌──────┐     │   │
-│  │  │ Pod  │  │ Pod  │     │  │  │ Pod  │  │ Pod  │     │   │
-│  │  └──────┘  └──────┘     │  │  └──────┘  └──────┘     │   │
+│  │ Node 1                 │  │ Node 2                 │     │
+│  │  kubelet               │  │  kubelet               │     │
+│  │  kube-proxy            │  │  kube-proxy            │     │
+│  │  container runtime     │  │  container runtime     │     │
+│  │  (containerd / CRI-O)  │  │                        │     │
+│  │                        │  │                        │     │
+│  │  ┌──────┐  ┌──────┐    │  │  ┌──────┐  ┌──────┐    │     │
+│  │  │ Pod  │  │ Pod  │    │  │  │ Pod  │  │ Pod  │    │     │
+│  │  └──────┘  └──────┘    │  │  └──────┘  └──────┘    │     │
 │  └────────────────────────┘  └────────────────────────┘     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**In AKS:** the control plane is managed by Azure (free in Free SKU). You only see/pay for worker nodes.
+### Control plane components
+
+| Component | Role |
+|---|---|
+| **API Server** | Front door. kubectl talks to this. All state changes go through it. |
+| **etcd** | Key-value store. Persistent cluster state. |
+| **Scheduler** | Decides which node runs each Pod. |
+| **Controller Manager** | Runs control loops (DeploymentController, ReplicaSetController, etc.). |
+
+### Worker node components
+
+| Component | Role |
+|---|---|
+| **kubelet** | Talks to API server. Manages Pod lifecycle on this node. |
+| **kube-proxy** | Implements Service networking (iptables/IPVS rules). |
+| **Container runtime** | Runs containers (containerd, CRI-O, Docker). |
+
+### In AKS
+
+The control plane is managed by Azure (free in Standard SKU, paid in Premium with SLA). You only see and pay for worker nodes.
+
+You can't SSH into the control plane. You interact via the kubectl-friendly API endpoint.
 
 ## 6.3 Core objects
 
+The objects you'll create most often.
+
 ### Pod
-The smallest deployable unit. Contains 1+ containers that share network + storage.
+
+**The smallest deployable unit.** 1+ containers that share network and storage.
 
 ```yaml
 apiVersion: v1
@@ -1011,10 +2209,11 @@ spec:
         - containerPort: 80
 ```
 
-**You rarely create Pods directly.** Use Deployments or StatefulSets which create Pods.
+You rarely create Pods directly. Use Deployments or StatefulSets.
 
 ### Deployment
-Manages replicas of a Pod. Handles rolling updates.
+
+**Manages a set of identical Pods, handles rolling updates.**
 
 ```yaml
 apiVersion: apps/v1
@@ -1033,30 +2232,47 @@ spec:
     spec:
       containers:
         - name: nginx
-          image: myacr/frontend:sha-abc123
+          image: myacr.azurecr.io/frontend:sha-abc123
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 2
+            periodSeconds: 5
 ```
 
-Lifecycle:
+### How a Deployment works
+
 ```
 You apply Deployment
    ↓
-Deployment creates ReplicaSet
+Deployment Controller creates a ReplicaSet
    ↓
-ReplicaSet creates 3 Pods
+ReplicaSet Controller creates Pods to match replicas count
    ↓
-You update image to sha-def456
+Scheduler picks nodes for the Pods
    ↓
-Deployment creates new ReplicaSet
+kubelet on each node pulls images, runs containers
+
+When you update the image:
    ↓
-New ReplicaSet creates Pods one at a time
+Deployment creates a NEW ReplicaSet with new image
    ↓
-Old Pods deleted one at a time
+Old ReplicaSet scales down, new one scales up
    ↓
-After all Pods updated, old ReplicaSet kept (for rollback)
+After completion, old ReplicaSet kept at 0 replicas (for rollback)
 ```
 
 ### Service
-A stable network endpoint for Pods. Pods come/go; Service stays.
+
+**A stable network endpoint for a set of Pods.** Pods come and go; the Service stays.
 
 ```yaml
 apiVersion: v1
@@ -1073,15 +2289,17 @@ spec:
 ```
 
 Service types:
-| Type | What |
+
+| Type | Behavior |
 |---|---|
 | `ClusterIP` | Internal IP only (default) |
-| `NodePort` | Open same port on every node |
-| `LoadBalancer` | Cloud provider creates external LB |
-| `ExternalName` | DNS alias to external service |
+| `NodePort` | Opens same port on every node's external IP |
+| `LoadBalancer` | Cloud provider creates external LB pointing at nodes |
+| `ExternalName` | DNS alias to an external service |
 
 ### ConfigMap and Secret
-Inject config into Pods.
+
+Inject configuration into Pods.
 
 ```yaml
 apiVersion: v1
@@ -1100,12 +2318,13 @@ metadata:
   name: db-creds
 type: Opaque
 data:
-  password: PEJBU0U2NCBFTkNPREVEPg==     # base64 of "<BASE64 ENCODED>"
+  password: PEJBU0U2NCBFTkNPREVEPg==     # base64
 ```
 
-**Critical:** Secrets are base64-encoded, NOT encrypted by default. Use external secret managers (Azure Key Vault, AWS Secrets Manager) for real secrets. Our lab still has hardcoded passwords in values.yaml — a known production gap.
+**Secrets are NOT encrypted by default**, just base64-encoded. Use External Secrets + Azure Key Vault for real secrets.
 
 ### Namespace
+
 Logical isolation within a cluster.
 
 ```yaml
@@ -1114,53 +2333,81 @@ kind: Namespace
 metadata:
   name: dev
   labels:
-    istio-injection: enabled     # opt into Istio sidecar
+    istio-injection: enabled     # opt into Istio sidecars
 ```
 
-Our lab: `dev`, `prod`, `argocd`, `jenkins`, `istio-system`, `monitoring` namespaces.
+Our lab uses: `dev`, `prod`, `argocd`, `argo-rollouts`, `jenkins`, `istio-system`, `monitoring`.
 
 ## 6.4 kubectl daily commands
 
+### Getting things
+
 ```bash
-# Context (which cluster)
-kubectl config current-context
-kubectl config use-context <name>
+kubectl get pods                       # default namespace
+kubectl get pods -n dev                # specific namespace
+kubectl get pods -A                    # all namespaces
+kubectl get pods -o wide               # extra columns
+kubectl get pods -o yaml               # full YAML output
+kubectl get pods --watch               # live updates
+kubectl get pods -l app=frontend       # filter by label
+```
 
-# Reading
-kubectl get pods                              # in default namespace
-kubectl get pods -n dev                       # in dev namespace
-kubectl get pods -A                           # all namespaces
-kubectl get pods -o wide                      # extra columns
-kubectl get pods -o yaml                      # full YAML
-kubectl describe pod my-pod                   # events + details
-kubectl logs my-pod                           # logs
-kubectl logs my-pod -c sidecar                # specific container
-kubectl logs my-pod --previous                # previous instance's logs
-kubectl logs -f my-pod                        # follow
+### Describing (events at the bottom)
 
-# Writing
-kubectl apply -f manifest.yaml                # create/update from YAML
-kubectl delete -f manifest.yaml
-kubectl edit deployment frontend              # edit live (avoid in prod)
+```bash
+kubectl describe pod my-pod -n dev     # pod events and details
+kubectl describe node aks-node-1        # node info
+```
 
-# Debugging
-kubectl exec -it my-pod -- sh                 # shell into container
-kubectl port-forward svc/frontend 8080:80     # forward local port to service
+### Logs
+
+```bash
+kubectl logs my-pod                    # logs from main container
+kubectl logs my-pod -c sidecar         # specific container
+kubectl logs my-pod --previous         # from last instance (if it crashed)
+kubectl logs -f my-pod                 # follow live
+kubectl logs -l app=frontend --tail=50 # last 50 lines from all matching pods
+```
+
+### Writing
+
+```bash
+kubectl apply -f manifest.yaml         # create or update
+kubectl delete -f manifest.yaml        # delete from manifest
+kubectl edit deployment frontend       # edit live (avoid in prod)
+```
+
+### Debugging
+
+```bash
+kubectl exec -it my-pod -- sh          # shell into running pod
+kubectl port-forward svc/frontend 8080:80   # forward local port
 kubectl run debug --rm -it --image=busybox -- sh   # ephemeral debug pod
+kubectl cp my-pod:/tmp/file ./file     # copy file out of pod
+```
 
-# Scaling
+### Scaling and rollout
+
+```bash
 kubectl scale deployment frontend --replicas=5
 kubectl rollout status deployment/frontend
-kubectl rollout undo deployment/frontend      # rollback
+kubectl rollout history deployment/frontend
+kubectl rollout undo deployment/frontend       # rollback
+```
 
-# Events
+### Events (debugging gold)
+
+```bash
 kubectl get events -A --sort-by='.lastTimestamp' | tail -20
 ```
 
 ## 6.5 Pod lifecycle
 
+### States
+
 ```
               Pending
+                │
                 │  (scheduler decides where to place)
                 ▼
               Running
@@ -1172,11 +2419,13 @@ kubectl get events -A --sort-by='.lastTimestamp' | tail -20
             (gone)
 ```
 
-Within Running, containers have:
-- `Init` containers — run before main containers
-- `Liveness probe` — "is the app alive?" → restart on failure
-- `Readiness probe` — "is the app ready for traffic?" → remove from Service load balancer until ready
-- `Startup probe` — "has it started yet?" → grace period before liveness kicks in
+### Within Running
+
+Containers have probes:
+
+- **Liveness probe** — "is the app alive?" Restart on failure.
+- **Readiness probe** — "is the app ready for traffic?" Remove from Service LB until ready.
+- **Startup probe** — "has it started yet?" Grace period before liveness kicks in.
 
 ```yaml
 spec:
@@ -1192,11 +2441,16 @@ spec:
 
 ## 6.6 Pod scheduling
 
-The scheduler picks a node based on:
-- **Resource requests** — does the node have enough CPU/memory free?
-- **Node selector** / `nodeAffinity` — does the node have required labels?
-- **Tolerations** / `taints` — can the pod tolerate the node's taints?
-- **Pod affinity/anti-affinity** — should it be near or far from other pods?
+### How the scheduler picks a node
+
+The scheduler considers:
+
+- **Resource requests** — does the node have free CPU/memory?
+- **Node selector / nodeAffinity** — does the node have required labels?
+- **Tolerations / taints** — can the pod tolerate the node's taints?
+- **Pod affinity / anti-affinity** — should it be near or far from other pods?
+
+### Resource requests vs limits
 
 ```yaml
 spec:
@@ -1211,46 +2465,90 @@ spec:
           memory: 512Mi
 ```
 
-**Critical:** `requests` is what the scheduler uses to decide placement. `limits` is the max the container can use. If you set requests too high, scheduling fails ("Insufficient cpu"). If limits too low, OOM kill.
+| | What it means |
+|---|---|
+| **requests** | Minimum reserved for the pod. Scheduler uses this to decide placement. |
+| **limits** | Maximum the container can use. Hit the CPU limit → throttled. Hit memory limit → OOM kill. |
 
-**Our lab gotcha:** Default Istio sidecar requests were 100m CPU each. 8 pods × 100m = 800m. On a 2 vCPU node with system pods taking 1100m, scheduler couldn't fit them. Fix: trim sidecars to 10m via annotations.
+### Our lab's Istio gotcha
+
+Default Istio sidecar requests were 100m CPU each. With 8 pods × 100m = 800m just for sidecars. On a 2 vCPU node with system pods taking 1100m, the scheduler couldn't fit them all.
+
+Fix: trim sidecars via annotations:
+
+```yaml
+metadata:
+  annotations:
+    sidecar.istio.io/proxyCPU: "10m"
+    sidecar.istio.io/proxyMemory: "64Mi"
+```
+
+Saves ~270m CPU per namespace.
 
 ## 6.7 Networking inside Kubernetes
 
+### How traffic flows
+
 ```
-Pod-to-Pod (same node)     ─►  via veth pair + Linux bridge
-Pod-to-Pod (across nodes)  ─►  via overlay network (kubenet, Calico, Cilium)
-Pod-to-Service             ─►  kube-proxy DNAT to a Pod IP
-Pod-to-Internet            ─►  via node IP (SNAT)
-External-to-Service        ─►  via LoadBalancer / Ingress
+Pod-to-Pod (same node)         → via veth pair + Linux bridge
+Pod-to-Pod (across nodes)      → via overlay network (kubenet, Calico, Cilium)
+Pod-to-Service                 → kube-proxy DNAT to a Pod IP
+Pod-to-Internet                → via node IP (SNAT)
+External-to-Service            → via LoadBalancer or Ingress
 ```
 
-**CNI options:**
-- **kubenet** (Azure default) — simple, NAT-based, no direct pod-to-pod across cluster boundaries
-- **Azure CNI** — pods get VNet IPs, can route to other Azure resources
-- **Calico, Cilium** — advanced, network policies, eBPF
+### CNI plugin options
 
-Our lab uses kubenet (Free Trial constraint).
+| CNI | What |
+|---|---|
+| **kubenet** (Azure default, our lab) | Simple, NAT-based, no direct pod-to-pod across cluster boundaries |
+| **Azure CNI** | Pods get VNet IPs, route to other Azure resources |
+| **Calico** | Open source, network policies, eBPF mode |
+| **Cilium** | eBPF-based, very fast, observability features |
+
+Production typically uses Azure CNI Overlay or Cilium. Our lab uses kubenet (Free Trial-friendly).
 
 ## 6.8 StatefulSet vs Deployment
+
+### Concept
+
+Most apps are stateless — replace a pod with another, no big deal. Some apps have identity — databases, brokers, leader-elected systems. StatefulSet handles these.
+
+### Comparison
 
 ```
 Deployment:                    StatefulSet:
   Pods are cattle               Pods are pets
+  ────────────────              ──────────────
   pod-7c8d-xyz1                 mydb-0
   pod-7c8d-xyz2                 mydb-1
   pod-7c8d-xyz3                 mydb-2
-                                ↑ ordinal, stable
+  Random names                  ↑ ordinal, stable
+                                
   Random order start            Ordered start (0 → 1 → 2)
   Random delete                 Reverse delete (2 → 1 → 0)
-  Shared PVC                    Per-pod PVC
+  Shared PVC (if any)           Per-pod PVC
+  No stable network ID          Stable DNS: mydb-0.mydb.<ns>...
 ```
 
-Use StatefulSet for databases (each pod has identity + persistent storage). Use Deployment for stateless apps.
+### When to use which
 
-Our lab: Postgres is a StatefulSet, frontend/backend are Rollouts (similar to Deployment).
+| Use Deployment | Use StatefulSet |
+|---|---|
+| Stateless apps | Databases (Postgres, MySQL) |
+| Web frontends | Message brokers (Kafka, RabbitMQ) |
+| API backends | Distributed consensus (etcd, Zookeeper) |
+| Worker pods | Apps that need stable identity |
+
+Our lab: frontend and backend are Rollouts (similar to Deployment). Postgres is a StatefulSet.
 
 ## 6.9 PersistentVolume and PersistentVolumeClaim
+
+### Concept
+
+Pods are ephemeral; their filesystems disappear on restart. For data that needs to persist, use **PersistentVolume** (PV) and **PersistentVolumeClaim** (PVC).
+
+### The relationship
 
 ```
 StorageClass     "managed-csi" (Azure disk)
@@ -1265,6 +2563,8 @@ PersistentVolumeClaim  "postgres-data"
 Pod   /var/lib/postgresql/data
 ```
 
+### PVC YAML
+
 ```yaml
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -1278,26 +2578,36 @@ spec:
       storage: 1Gi
 ```
 
-Access modes:
-- `ReadWriteOnce` — one node at a time (Azure disk)
-- `ReadOnlyMany` — many nodes can read
-- `ReadWriteMany` — many nodes can write (Azure Files, NFS)
+### Access modes
 
-Our lab: managed-csi for Postgres (RWO), azurefile-csi for npm/trivy cache (RWX).
+| Mode | Behavior |
+|---|---|
+| `ReadWriteOnce` (RWO) | One node at a time. Azure Disk, EBS. Standard for databases. |
+| `ReadOnlyMany` (ROX) | Many nodes can read. |
+| `ReadWriteMany` (RWX) | Many nodes can write. Azure Files, NFS. Slower. |
 
-## 6.10 RBAC (Role-Based Access Control)
+Our lab uses:
+
+- `managed-csi` (Azure Disk, RWO) for Postgres
+- `azurefile-csi` (Azure Files, RWX) for npm/trivy caches shared across CI pods
+
+## 6.10 RBAC
+
+### Concept
+
+Role-Based Access Control. Who can do what.
 
 ```
-ServiceAccount  ←──── pod identity
+ServiceAccount  ←─── pod identity (what's running)
        │
-       ▼  bound to
-Role / ClusterRole  ←──── what can be done
+       ▼  bound by
+Role / ClusterRole  ←─── permissions
        │
-       ▼
-RoleBinding / ClusterRoleBinding  ←──── grants the role to the ServiceAccount
+       ▼  granted via
+RoleBinding / ClusterRoleBinding
 ```
 
-Example: Jenkins SA needs to do `helm upgrade`:
+### Example: Jenkins SA can do helm upgrade
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -1307,6 +2617,9 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["pods", "services", "secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ```
 
@@ -1325,69 +2638,140 @@ roleRef:
   name: jenkins-deployer
 ```
 
-**Rule of thumb:** ClusterRole is reusable, RoleBinding namespaces it.
+**Rule of thumb:** ClusterRole is reusable. RoleBinding namespaces it.
 
 ## 6.11 Common pod failure modes
 
-```
-Pending           Insufficient resources, node selector mismatch, PVC not bound
-Init:0/1          Init container failing
-CrashLoopBackOff  Container exits, k8s restarts, exits, ...
-ImagePullBackOff  Can't pull the image (wrong tag, no creds, network)
-OOMKilled         Used more memory than the limit
-Error             Container exit code != 0
-Completed         Job done (for one-shot pods)
-```
+| State | Meaning |
+|---|---|
+| `Pending` | Insufficient resources, node selector mismatch, PVC not bound |
+| `Init:0/1` | Init container is running |
+| `CrashLoopBackOff` | Container exits, k8s restarts, exits, ... |
+| `ImagePullBackOff` | Can't pull the image (wrong tag, no creds, network) |
+| `OOMKilled` | Used more memory than the limit |
+| `Error` | Container exit code != 0 |
+| `Completed` | Job done (for one-shot pods) |
 
-How to debug:
+### Debug workflow
+
 ```bash
-kubectl describe pod <pod>             # events at bottom
+kubectl describe pod <pod>             # events at the bottom
 kubectl logs <pod>                     # what app printed
 kubectl logs <pod> --previous          # from last crash
 kubectl get events -n <ns> --sort-by='.lastTimestamp'
 ```
 
-## 6.12 Why this matters in interviews
+## 6.12 Interview talking points
 
-> "How would you debug a pod stuck in Pending?"
+> **Q:** "How would you debug a pod stuck in Pending?"
+>
+> "First `kubectl describe pod <name>` — events at the bottom usually tell you. Common: 'Insufficient cpu' — requests too high or cluster full, check `kubectl describe nodes` for allocatable vs requested. 'FailedScheduling: 0/2 nodes match' — node selectors, taints, affinity. 'pvc not bound' — StorageClass missing or PVC mistyped. 'No nodes available' — cluster empty, autoscaler off? Then `kubectl get events -A --sort-by='.lastTimestamp'` for broader context."
 
-Good answer:
-> "First `kubectl describe pod <name>` — events at the bottom usually tell you. Common: 'Insufficient cpu' (requests too high or cluster full), 'FailedScheduling: 0/2 nodes match' (node selector or taints), 'pvc not bound' (StorageClass missing or PVC mistyped). I'd check resource requests vs cluster capacity, look at the node's allocatable resources, verify any node affinity rules, and ensure the namespace has any required SCCs/PSPs."
+> **Q:** "What's the difference between requests and limits?"
+>
+> "Requests are what the scheduler uses to decide placement — the minimum reserved for the pod. Limits are the max the container can use. Hit CPU limit, you get throttled — slow but alive. Hit memory limit, OOM kill — pod restarts. Setting requests too high means failed scheduling. Setting limits too low means OOM kills. Setting them equal is 'guaranteed' QoS class — best stability."
+
+> **Q:** "When would you pick StatefulSet over Deployment?"
+>
+> "When the workload needs stable identity, stable storage, or ordered startup. Databases — Postgres, MySQL — definitely. Brokers like Kafka, RabbitMQ. Anything with leader election where pod-0 must be reachable as 'the leader.' For stateless apps, Deployment is simpler and faster. For our lab Postgres is a StatefulSet, frontend and backend are Rollouts which behave like Deployment."
 
 ## 6.13 Exercises
 
-1. Install `kubectl`, configure for a local cluster (kind, minikube, k3d)
-2. Apply a Deployment + Service YAML, expose it, hit it with curl
-3. Create a ConfigMap and mount it in a Pod
-4. Trigger an OOM by setting limits low and stressing memory
-5. Use `kubectl port-forward` to access an internal service
-6. Write an RBAC policy that lets a ServiceAccount only read pods
+1. Install `kubectl` and configure it for a local cluster (kind, minikube, k3d).
+2. Apply a Deployment + Service YAML, expose it, hit it with curl.
+3. Create a ConfigMap and mount it in a pod.
+4. Trigger an OOM by setting memory limits low and stressing memory.
+5. Use `kubectl port-forward` to access an internal service.
+6. Write an RBAC policy that lets a ServiceAccount only read pods.
+7. Create a StatefulSet with a PVC and verify data persists across pod restart.
 
 ---
 
-# Chapter 7: Infrastructure as Code with Terraform
 
-## 7.1 What is IaC?
+# Chapter 7: Terraform and Infrastructure as Code
 
-Instead of clicking through cloud consoles, **describe infrastructure as code**. Benefits:
+## 7.1 Concept
 
-- **Reproducible** — same code produces same infrastructure every time
-- **Reviewable** — diff in a PR, get approval
-- **Versioned** — Git history shows who changed what
-- **Disaster recovery** — destroy and re-create from scratch
-- **Self-documenting** — code IS the documentation
+**Infrastructure as Code (IaC)** means your infrastructure — VMs, networks, clusters, DNS records, IAM roles — is defined in text files, version-controlled in Git, and applied through a tool. No more clicking through the Azure portal at 2 AM trying to remember what you set the disk size to.
 
-## 7.2 Terraform basics
+**Terraform** is HashiCorp's IaC tool. You declare the desired state in `.tf` files. Terraform compares it to the actual state, computes a plan (what to add/change/destroy), and applies it.
 
-Terraform uses HCL (HashiCorp Configuration Language):
+```
+Your .tf files          Terraform                Cloud
++----------------+      +------------+      +----------------+
+| resource "vm" |----->| terraform |----->| Azure VM created|
+| { size = ... } |      |  apply     |      | with that size  |
++----------------+      +------------+      +----------------+
+       |                       ^                      |
+       |                       |                      |
+       +-- Git -- code review -+   <-- reads state ---+
+```
+
+## 7.2 Why it matters
+
+| Without IaC | With Terraform |
+|---|---|
+| Click through portal, hope you remember | Code is the source of truth |
+| No review, no diff | PR-reviewed plans before changes |
+| Drift between environments | Same module, different `tfvars` |
+| Disaster recovery = days | `terraform apply` and you're back |
+| Onboarding new engineer = "let me show you" | "Read the repo, run `plan`" |
+
+For a platform engineer, **everything starts here**. The cluster, the networks, the registry, the service principals — all defined in code.
+
+## 7.3 The core workflow
+
+```
++-----------+     +-----------+     +-----------+     +-----------+
+|   write   |---->|   init    |---->|   plan    |---->|   apply   |
+|   .tf     |     | (download |     | (preview  |     | (execute) |
+|           |     | providers)|     |  diff)    |     |           |
++-----------+     +-----------+     +-----------+     +-----------+
+                                          |
+                                          v
+                                    "+ 3 to add"
+                                    "~ 1 to change"
+                                    "- 0 to destroy"
+```
+
+- **`terraform init`** — downloads providers (Azure, AWS, GCP, Kubernetes, Helm, etc.), initializes the backend.
+- **`terraform plan`** — reads state, compares with code, prints a diff. **Never skip this in real environments.**
+- **`terraform apply`** — applies the plan. Asks for confirmation unless `-auto-approve`.
+- **`terraform destroy`** — tears down everything in the state. Useful for ephemeral labs, terrifying in production.
+
+## 7.4 State — the brain of Terraform
+
+State is the mapping between your code and what actually exists in the cloud. Terraform stores it in a file called `terraform.tfstate`.
+
+```
+Code says:                   State says:                   Cloud has:
+"resource azurerm_vm vm1"    vm1 -> /subscriptions/.../    Azure VM with that ID
+                             vm-7b3c9f
+```
+
+### Local vs remote state
+
+- **Local state** — `terraform.tfstate` in the working directory. Fine for one person, one machine. Lose the file, lose the brain.
+- **Remote state** — stored in Azure Blob, S3, or Terraform Cloud. Required for teams. Supports **locking** so two people don't `apply` simultaneously.
+
+### State has secrets
+
+Terraform writes resource attributes to state. That includes admin passwords, SP secrets, connection strings. **Treat the state file like a credential.**
+
+### In our lab
+
+We use **Azure Blob Storage** for remote state. Bootstrap (`bootstrap/`) creates the storage account, then `live/` Terraform configures itself with `backend "azurerm"` pointing at it. The blob is encrypted at rest, access is controlled by SP role.
+
+## 7.5 Building blocks
+
+### Providers
 
 ```hcl
-# Provider — which cloud
 terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 3.0"
+      version = "~> 4.0"
     }
   }
 }
@@ -1395,1077 +2779,872 @@ terraform {
 provider "azurerm" {
   features {}
 }
+```
 
-# Resource — something to create
-resource "azurerm_resource_group" "main" {
-  name     = "my-rg"
+### Resources
+
+```hcl
+resource "azurerm_resource_group" "rg" {
+  name     = "gskplat-prod-rg"
   location = "eastus2"
   tags = {
-    Environment = "lab"
-  }
-}
-
-# Output — values to surface after apply
-output "rg_id" {
-  value = azurerm_resource_group.main.id
-}
-```
-
-## 7.3 Terraform workflow
-
-```
-┌────────────┐    ┌────────────┐    ┌────────────┐
-│ terraform  │ → │ terraform  │ → │ terraform  │
-│ init       │   │ plan       │   │ apply      │
-└────────────┘    └────────────┘    └────────────┘
-     │                 │                 │
-     ▼                 ▼                 ▼
- Download provider   Show diff        Make changes
- Set up backend     (what would       (creates/updates
-                     change)           cloud resources)
-```
-
-```bash
-# In a directory with .tf files
-terraform init             # download provider, set up backend
-terraform plan             # preview changes (NO changes made)
-terraform plan -out=tfplan # save plan to a file
-terraform apply tfplan     # apply the saved plan (safer in CI)
-terraform apply            # plan + apply with prompt
-terraform destroy          # delete everything
-
-# State management
-terraform state list       # what's tracked
-terraform state show <res> # details of a resource
-terraform state rm <res>   # untrack (resource stays in cloud)
-terraform import <res> <id> # adopt existing cloud resource into state
-
-# Other
-terraform fmt              # format code
-terraform validate         # syntax check
-terraform output           # show output values
-```
-
-## 7.4 State
-
-Terraform stores the current state of your infrastructure in `terraform.tfstate`. This is critical:
-
-- Maps resources in HCL to real-world IDs
-- Required to compute diffs
-- Contains sensitive data (passwords, keys)
-
-### Local vs Remote state
-
-**Local state:** `terraform.tfstate` on your laptop. Bad for teams.
-
-**Remote state:** stored in Azure Storage, S3, etc. Enables:
-- Team collaboration (locking prevents simultaneous applies)
-- Backup
-- CI/CD pipelines can apply
-
-Our lab uses Azure Storage:
-
-```hcl
-terraform {
-  backend "azurerm" {
-    resource_group_name  = "gskplat-rg-tfstate"
-    storage_account_name = "gskplattfstatey2gvg3"
-    container_name       = "tfstate"
-    key                  = "live.terraform.tfstate"
+    env = "prod"
   }
 }
 ```
 
-### The chicken-and-egg problem
-
-You need a state SA to use remote state, but you need Terraform to create the SA. Solution: **bootstrap** with local backend.
-
-```
-terraform/
-├── bootstrap/      # local backend — creates the state SA
-│   └── main.tf
-└── live/           # remote backend — uses the SA created by bootstrap
-    └── main.tf
-```
-
-Run `bootstrap` once with local state, then migrate live to remote.
-
-## 7.5 Variables and outputs
+### Variables
 
 ```hcl
-# variables.tf
 variable "location" {
+  description = "Azure region"
   type        = string
   default     = "eastus2"
-  description = "Azure region"
-}
-
-variable "tags" {
-  type    = map(string)
-  default = {
-    Project = "azure-platform-lab"
-  }
-}
-
-# Use it
-resource "azurerm_resource_group" "main" {
-  name     = "rg-${var.location}"
-  location = var.location
-  tags     = var.tags
 }
 ```
 
-Set values via `terraform.tfvars`:
-```
-location = "westeurope"
-tags = {
-  Project = "demo"
-  Owner   = "alice"
-}
-```
-
-Or env vars: `TF_VAR_location=westeurope terraform apply`
-
-## 7.6 Modules
-
-Modules are reusable bundles of `.tf` files.
-
-```
-terraform/
-├── modules/
-│   ├── network/
-│   │   ├── main.tf
-│   │   ├── variables.tf
-│   │   └── outputs.tf
-│   └── aks/
-└── live/
-    └── main.tf       # consumes modules
-```
+Pass values via `.tfvars` files:
 
 ```hcl
-# live/main.tf
-module "network" {
-  source = "../modules/network"
+# terraform.tfvars
+location = "eastus2"
+env      = "prod"
+```
 
-  resource_group_name = azurerm_resource_group.main.name
-  location            = "eastus2"
-  vnet_cidr           = "10.0.0.0/16"
-}
+### Outputs
 
-module "aks" {
-  source = "../modules/aks"
-
-  resource_group_name = azurerm_resource_group.main.name
-  vnet_subnet_id      = module.network.aks_subnet_id
+```hcl
+output "rg_name" {
+  value = azurerm_resource_group.rg.name
 }
 ```
 
-Our lab uses 3 modules: `network`, `acr`, `aks`. Each gets composed in `live/`.
-
-## 7.7 State locking
-
-When you run `terraform apply`, the backend locks the state. Concurrent applies are blocked.
-
-```bash
-# Person A
-terraform apply              # acquires lock
-
-# Person B
-terraform apply              # ERROR: state is locked
-```
-
-Azure Storage uses blob leases. AWS S3 uses DynamoDB. Locks auto-release on apply complete, even on crash (with timeout).
-
-## 7.8 Data sources
-
-Read existing cloud resources without managing them:
+### Data sources (read existing things)
 
 ```hcl
 data "azurerm_subscription" "current" {}
 
-resource "azurerm_role_assignment" "example" {
-  scope        = data.azurerm_subscription.current.id
-  role         = "Reader"
-  principal_id = "..."
+output "sub_id" {
+  value = data.azurerm_subscription.current.subscription_id
 }
 ```
 
-## 7.9 Common gotchas
+### Locals (DRY)
 
-| Gotcha | Fix |
-|---|---|
-| Apply takes forever | Most cloud resources are async. AKS takes ~10 min, ACR takes ~30s |
-| Provider permissions | SP needs both `Contributor` AND `User Access Administrator` for role assignments |
-| Drift from manual changes | `terraform plan` shows them. Either accept or refactor HCL |
-| State corruption | Backup `terraform.tfstate` before risky operations |
-| Sensitive in state | Use `sensitive = true`, never commit state to git |
-| Implicit dependencies | Terraform infers from references. Use `depends_on` for explicit |
-| Resource recreation | Some changes force replace (e.g., changing VNet CIDR). Plan shows `-/+` |
+```hcl
+locals {
+  common_tags = {
+    project = "gskplat"
+    owner   = "platform"
+  }
+}
 
-Our lab's RBAC gotcha was iter 2: SP had `Contributor` only, the AKS module tried to create role assignments, got `AuthorizationFailed: Microsoft.Authorization/roleAssignments/write denied`. Added `User Access Administrator` and it worked.
-
-## 7.10 Production patterns
-
-```
-Pattern 1 — Workspace per environment
-  terraform workspace new dev
-  terraform workspace new prod
-  Use ${terraform.workspace} in HCL
-
-Pattern 2 — Directory per environment (recommended)
-  terraform/
-  ├── live/
-  │   ├── dev/
-  │   │   ├── main.tf
-  │   │   └── terraform.tfvars
-  │   └── prod/
-  │       ├── main.tf
-  │       └── terraform.tfvars
-
-Pattern 3 — One state per service
-  terraform/
-  ├── networking/
-  ├── identity/
-  ├── kubernetes/
-  └── data/
-  Each has its own state file
+resource "azurerm_resource_group" "rg" {
+  name     = "gskplat-rg"
+  location = var.location
+  tags     = local.common_tags
+}
 ```
 
-Our lab uses pattern 1.5 — single `live/` with tfvars per env (not fully separated). Production gap.
+## 7.6 Modules — reusable Terraform
 
-## 7.11 Why this matters in interviews
+A module is a directory of `.tf` files you call from elsewhere.
 
-> "Why two Terraform directories (bootstrap + live)?"
+```
+modules/
+  aks/
+    main.tf
+    variables.tf
+    outputs.tf
+live/
+  prod/
+    main.tf       <-- calls module "aks"
+```
 
-Good answer:
-> "Chicken-and-egg. Terraform needs a backend before using one. Bootstrap creates the state Storage Account with a local backend (its state stays on the developer's laptop or a one-time CI run). Live then references that SA as its remote backend. Once bootstrap is done, you essentially never touch it again. Live is where day-to-day infrastructure changes happen."
+```hcl
+# live/prod/main.tf
+module "aks" {
+  source              = "../../modules/aks"
+  resource_group_name = azurerm_resource_group.rg.name
+  node_count          = 2
+  vm_size             = "Standard_B2s"
+}
+```
 
-## 7.12 Exercises
+**Rule of thumb:** if you'd copy-paste the same block twice, make it a module.
 
-1. Install Terraform: `brew install terraform` or download from terraform.io
-2. Write HCL for an Azure Resource Group, apply it
-3. Add a Storage Account inside that RG
-4. Migrate from local to remote backend
-5. Refactor to use a `module`
-6. Try `terraform import` on an existing cloud resource
-7. Inspect the state: `terraform state pull | jq`
+## 7.7 Gotchas
+
+- **State drift.** Someone clicked in the portal. Terraform now disagrees with reality. Run `terraform refresh` or `terraform plan` to see drift, then either import the change or revert in the portal.
+- **`destroy` is non-reversible.** Always `plan -destroy` first. Verify the resource list.
+- **Secrets in state.** Never commit `.tfstate` to Git. Use remote state with encryption.
+- **Provider version drift.** Pin providers (`~> 4.0`). A new major version can change defaults and break things silently.
+- **Long applies.** AKS takes 10-15 minutes. `terraform apply` will sit there. Don't kill it — leave it running.
+- **Lock file (`.terraform.lock.hcl`).** Commit it. It pins exact provider versions for the team.
+
+## 7.8 In our lab
+
+We follow the standard layout:
+
+```
+infra/
+  bootstrap/        # creates the state storage account (run once)
+  modules/
+    network/        # VNet, subnets, NSGs
+    aks/            # AKS cluster + node pool
+    acr/            # container registry
+    monitoring/     # Log Analytics workspace
+  live/
+    dev/            # dev environment, calls modules
+    prod/           # prod environment, calls modules
+```
+
+Each `live/<env>/` has its own state file (in the shared storage account but with different keys), so dev applies can never break prod.
+
+## 7.9 Interview talking points
+
+> **Q:** "Why Terraform over ARM/Bicep/CloudFormation?"
+>
+> "Terraform is cloud-agnostic — same tool for Azure, AWS, GCP, Kubernetes, Helm, GitHub. ARM/Bicep are Azure-only. For a multi-cloud or platform-engineering role, Terraform is the lingua franca. Also: huge module ecosystem, mature state management, and `plan` gives you a real diff before applying."
+
+> **Q:** "How do you handle Terraform state for a team?"
+>
+> "Remote backend with locking — Azure Blob with the `azurerm` backend, S3 + DynamoDB for AWS. Never local state in a real team. Separate state per environment (dev/staging/prod) so a dev apply can't blow up prod. State has secrets so the bucket/account is locked down with IAM."
+
+> **Q:** "How do you handle secrets in Terraform?"
+>
+> "Never in code. Use environment variables (`TF_VAR_*`), CI secrets, or pull from a vault — Azure Key Vault, AWS Secrets Manager, HashiCorp Vault — at runtime via data source. State still has them, so encrypt the state and restrict access."
+
+## 7.10 Exercises
+
+1. Install Terraform locally. Run `terraform version`.
+2. Write a `.tf` file that creates one Azure Resource Group. `init`, `plan`, `apply`.
+3. Add a variable for region. Override it with `-var`, then with a `.tfvars` file.
+4. Move the RG into a module. Call it from a root config.
+5. Configure remote state in Azure Blob. Migrate from local to remote.
+6. Run `terraform destroy`. Recreate. Notice state recreates from scratch.
+7. Import an existing Azure resource into Terraform with `terraform import`.
 
 ---
 
-# Chapter 8: Helm — Package Manager for Kubernetes
+# Chapter 8: Helm — Kubernetes Package Manager
 
-## 8.1 The problem Helm solves
+## 8.1 Concept
 
-A typical app needs many k8s objects: Deployment + Service + ConfigMap + Secret + Ingress + PVC. Writing them all is tedious. Templating differences per environment is hard.
-
-**Helm** is a package manager for Kubernetes. A **chart** is a package containing templates + default values.
-
-## 8.2 Chart structure
+A Helm **chart** is a parameterized bundle of Kubernetes YAML. Think of it like a Debian package, but for k8s.
 
 ```
-mychart/
-├── Chart.yaml          # chart metadata
-├── values.yaml         # default values
-├── templates/
-│   ├── deployment.yaml
-│   ├── service.yaml
-│   ├── configmap.yaml
-│   └── _helpers.tpl    # named templates
-├── charts/             # sub-charts (dependencies)
-└── README.md
++-------------------+
+|  my-app/  (chart) |
+|  +-- Chart.yaml   |   <-- metadata (name, version)
+|  +-- values.yaml  |   <-- default config
+|  +-- templates/   |   <-- YAML with {{ .Values.foo }} placeholders
+|       +-- deploy.yaml
+|       +-- service.yaml
++-------------------+
 ```
 
-## 8.3 Templates with values
-
-Template file `templates/deployment.yaml`:
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: {{ .Release.Name }}-{{ .Chart.Name }}
-spec:
-  replicas: {{ .Values.replicaCount }}
-  selector:
-    matchLabels:
-      app: {{ .Chart.Name }}
-  template:
-    metadata:
-      labels:
-        app: {{ .Chart.Name }}
-    spec:
-      containers:
-        - name: app
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          resources:
-            {{- toYaml .Values.resources | nindent 12 }}
-```
-
-Values file `values.yaml`:
-
-```yaml
-replicaCount: 3
-image:
-  repository: nginx
-  tag: 1.28-alpine
-resources:
-  requests:
-    cpu: 100m
-    memory: 128Mi
-```
-
-Helm interpolates `{{ }}` blocks. Sprig functions for string/list manipulation.
-
-## 8.4 Common Helm commands
+You install it like this:
 
 ```bash
-# Add a repo
-helm repo add bitnami https://charts.bitnami.com/bitnami
-helm repo update
-
-# Search for charts
-helm search repo bitnami/nginx
-helm search hub nginx          # search Artifact Hub
-
-# Install
-helm install my-app bitnami/nginx
-helm install my-app bitnami/nginx --values myvalues.yaml
-helm install my-app bitnami/nginx --set replicaCount=5
-helm install my-app . --namespace dev --create-namespace
-
-# Inspect
-helm list                       # releases
-helm list -A                    # all namespaces
-helm get values my-app          # the values used
-helm get manifest my-app        # rendered YAML
-helm history my-app             # revision history
-helm template ./mychart         # render without installing (debug)
-
-# Update
-helm upgrade my-app bitnami/nginx --values myvalues.yaml
-helm upgrade --install my-app ./mychart    # install if missing, upgrade if exists
-
-# Rollback
-helm rollback my-app 1          # to revision 1
-
-# Uninstall
-helm uninstall my-app
+helm install myapp ./my-app -f values-prod.yaml
 ```
 
-## 8.5 Subcharts / umbrella charts
+Helm renders the templates with values, applies the resulting YAML to the cluster, and tracks it as a **release**.
 
-Our lab uses an umbrella chart:
+## 8.2 Why it matters
 
-```
-kubernetes/apps/three-tier/
-├── Chart.yaml          # umbrella — depends on subcharts
-├── values.yaml         # defaults for umbrella
-├── values-dev.yaml
-├── values-prod.yaml
-└── charts/
-    ├── frontend/       # subchart
-    ├── backend/        # subchart
-    └── database/       # subchart
-```
+| Without Helm | With Helm |
+|---|---|
+| Copy-paste 20 YAML files per env | One chart, many values.yaml |
+| Hand-edit image tag everywhere | One value `image.tag` |
+| Hard to upgrade | `helm upgrade` with rollback |
+| No package registry | OCI registries (ACR, Docker Hub) |
 
-`Chart.yaml`:
+For platform engineers, Helm is **the** way to deliver internal apps to teams and consume off-the-shelf components (Prometheus, ArgoCD, cert-manager).
+
+## 8.3 The pieces
+
+### Chart.yaml
+
 ```yaml
 apiVersion: v2
 name: three-tier
 version: 0.1.0
+appVersion: "1.0.0"
+description: A web + api + db demo app
+```
+
+### values.yaml — defaults
+
+```yaml
+frontend:
+  image:
+    repository: nginx
+    tag: latest
+  replicaCount: 1
+```
+
+### templates/deployment.yaml — Go templating
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-frontend
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  template:
+    spec:
+      containers:
+      - name: frontend
+        image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+```
+
+### Values override per environment
+
+```bash
+helm install dev   ./my-app -f values-dev.yaml
+helm install prod  ./my-app -f values-prod.yaml
+```
+
+Same chart. Two completely different deployments.
+
+## 8.4 The lifecycle
+
+```
+       +----------+    +-------------+    +-----------+    +-----------+
+write  | template | -> | values.yaml | -> | render    | -> | apply to  |
+chart  | YAML     |    | per env     |    | with helm |    | cluster   |
+       +----------+    +-------------+    +-----------+    +-----------+
+                                                                |
+                                                                v
+                                                          tracked as a
+                                                          "release"
+```
+
+### Common commands
+
+```bash
+helm install <release> <chart>          # first install
+helm upgrade <release> <chart>          # change config
+helm upgrade --install <release> ...    # idempotent (install or upgrade)
+helm rollback <release> <revision>      # back to a prior release
+helm list -A                            # all releases everywhere
+helm uninstall <release>                # delete everything
+helm template <chart> -f values.yaml    # render without applying (dry-run)
+```
+
+## 8.5 Umbrella charts and subcharts
+
+A chart can depend on other charts. This is how you ship "an app stack" as one unit.
+
+```
+three-tier/                  <-- umbrella chart
+  Chart.yaml                  (declares dependencies)
+  values.yaml                 (parent values)
+  charts/                     <-- subcharts live here
+    frontend/
+    backend/
+    database/
+```
+
+```yaml
+# Chart.yaml
 dependencies:
   - name: frontend
     version: 0.1.0
-    repository: file://./charts/frontend
+    repository: file://charts/frontend
   - name: backend
     version: 0.1.0
+    repository: file://charts/backend
   - name: database
     version: 0.1.0
+    repository: file://charts/database
 ```
 
-To override a subchart value, nest under the subchart name:
+One `helm install` brings up the whole stack. One `helm uninstall` tears it down.
 
-```yaml
-# values-dev.yaml
-frontend:                # ← passes to frontend subchart
-  image:
-    tag: sha-abc123
-backend:
-  image:
-    tag: sha-abc123
-```
+## 8.6 Gotchas
 
-## 8.6 Conditionals and loops
+- **`helm template` lies sometimes.** It doesn't validate against the cluster's schema. Use `helm install --dry-run` for that.
+- **Image tag = `latest`.** Don't. Pin to a digest or SHA. `latest` rolls silently and breaks reproducibility.
+- **Helm 2 was tiller.** Helm 3 dropped tiller. If you see references to tiller, that's old.
+- **Whitespace in templates.** `{{- }}` strips whitespace. Forget it and you'll get blank lines that break YAML.
+- **Subchart values are namespaced.** To set frontend's replicaCount in the umbrella `values.yaml`, write `frontend.replicaCount` not `replicaCount`.
+- **`helm upgrade --force` is dangerous.** It recreates resources, which means downtime for Services/StatefulSets.
 
-```yaml
-{{- if .Values.blueGreen.enabled }}
-apiVersion: argoproj.io/v1alpha1
-kind: Rollout
-# ...
-{{- else }}
-apiVersion: apps/v1
-kind: Deployment
-# ...
-{{- end }}
+## 8.7 Helm vs Kustomize
 
-{{- range .Values.containers }}
-  - name: {{ .name }}
-    image: {{ .image }}
-{{- end }}
+| | Helm | Kustomize |
+|---|---|---|
+| Approach | Templating (Go templates) | Patching (YAML overlays) |
+| Power | High (loops, conditionals) | Medium (overlays, generators) |
+| Complexity | Higher learning curve | Lower |
+| Built into kubectl | No | Yes (`kubectl apply -k`) |
+| Best for | Distributable packages | Env-specific tweaks |
 
-{{- range $key, $val := .Values.env }}
-  - name: {{ $key }}
-    value: {{ $val | quote }}
-{{- end }}
-```
+Many teams use **both**: Helm for upstream things (Prometheus, ArgoCD), Kustomize for in-house overlays.
 
-Our lab uses this to toggle between Deployment and Rollout based on `blueGreen.enabled`.
+## 8.8 In our lab
 
-## 8.7 Helm hooks
+The whole three-tier app is a Helm umbrella chart at `kubernetes/apps/three-tier/`. We have:
 
-Run jobs at specific points in the lifecycle:
+- `values.yaml` — defaults (image tag `latest`, replicas 1)
+- `values-dev.yaml` — dev overrides (sha tag, blueGreen auto-promote)
+- `values-prod.yaml` — prod overrides (sha tag, blueGreen manual gate)
 
-```yaml
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: db-migrate
-  annotations:
-    helm.sh/hook: pre-install,pre-upgrade
-    helm.sh/hook-weight: "-5"
-    helm.sh/hook-delete-policy: hook-succeeded
-```
+ArgoCD applications point at these charts. When CI changes `values-dev.yaml` and commits, ArgoCD re-runs `helm template` and applies the diff.
 
-Common hooks:
-- `pre-install` — before install
-- `post-install` — after install
-- `pre-upgrade` / `post-upgrade`
-- `pre-delete` / `post-delete`
+## 8.9 Interview talking points
 
-## 8.8 Helm vs Kustomize
+> **Q:** "Helm or Kustomize?"
+>
+> "Depends. Helm for distributing things — packages, internal platforms. The templating + values pattern is the right fit when 'one chart serves N environments and M teams.' Kustomize for environment overlays of YAML you own — patch the dev replicas, patch the staging image. Many real systems use both: Helm to install upstream tools, Kustomize for env-specific patches."
 
-```
-              Helm                          Kustomize
-─────────────────────────────────────────────────────────────
-Mechanism     Templates + values            Patches on base manifests
-Language      Go templates (powerful, hard) None (pure YAML)
-Versioning    Charts published to registry  None natively
-Pkg mgmt      Yes (helm install)            No
-Learning curve Steeper                      Gentler
-Industry      Very widely used              Built into kubectl
-```
-
-Most teams use Helm for installs (Nginx Ingress, cert-manager, ArgoCD, Prometheus). Some use Kustomize for in-house apps.
-
-## 8.9 Why this matters in interviews
-
-> "How do you manage configuration across environments?"
-
-Good answer:
-> "Helm chart with environment-specific values files. We have `values-dev.yaml` and `values-prod.yaml` overriding the defaults. The chart itself is generic — toggle features via `--set` or values files. Image tags get injected by CI (writing to values.yaml + committing to Git). For sensitive values, External Secrets Operator pulls from Azure Key Vault into k8s Secrets the chart references."
+> **Q:** "How do you handle secrets in Helm?"
+>
+> "Don't put secrets in values.yaml. Either: (1) sealed-secrets / sops-encrypted values committed to git, (2) Helm pulls from a vault at install time, (3) use external-secrets-operator to sync from Key Vault into k8s Secrets. The chart references the Secret by name; the value comes from elsewhere."
 
 ## 8.10 Exercises
 
-1. `helm install my-nginx bitnami/nginx`
-2. Override default replicas with `--set`
-3. Write a chart from scratch for a simple app
-4. Add a conditional template
-5. Use `helm template . --debug` to inspect rendering
-6. Create an umbrella chart with two subcharts
-7. Try `helm rollback` after an upgrade
+1. `helm create my-chart`. Inspect the generated files.
+2. Install it. Use `helm get values` and `helm get manifest` to inspect.
+3. Override one value with `-f` and `--set`.
+4. `helm upgrade` with a new value. Then `helm rollback`.
+5. Add a subchart. Set a subchart value from the umbrella.
+6. Run `helm template ... | kubectl apply -f -`. Notice this skips Helm tracking.
+7. Push a chart to an OCI registry (ACR supports OCI charts).
 
 ---
 
-# Chapter 9: Azure Specifics for Platform Engineers
+# Chapter 9: Azure Specifics
 
-## 9.1 Azure resource hierarchy
+## 9.1 The Azure mental model
 
 ```
-Tenant (Microsoft Entra ID)
-  │
-  ├── Management Groups (optional, multi-sub orgs)
-  │
-  └── Subscription (billing boundary)
-       │
-       └── Resource Group (logical container)
-            │
-            └── Resource (VM, AKS, ACR, etc.)
++---------------------------------------------------------+
+|                      Microsoft Entra ID (AAD)            |
+|              tenant: identity for users/SPs              |
++----------------------+-----------------------------------+
+                       |
++----------------------v-----------------------------------+
+|                    Subscription                          |
+|         billing boundary, contains resources             |
++----------------------+-----------------------------------+
+                       |
+       +---------------+-----------------+
+       |                                 |
++------v--------+                +-------v--------+
+| Resource Group|                | Resource Group |
+|   gskplat-rg  |                | someother-rg   |
++------+--------+                +----------------+
+       |
+   +---+---+---+---+
+   |   |   |   |   |
+   AKS ACR VNet ...
 ```
 
-A **subscription** is where you pay. A **resource group** is where you organize. Everything lives in a resource group.
+- **Tenant** — your Microsoft Entra ID directory. Identity lives here.
+- **Subscription** — a billing container. Resources are billed to one subscription.
+- **Resource Group (RG)** — a logical bag of resources. Delete the RG = delete everything in it.
+- **Resource** — anything: VM, VNet, AKS, ACR, storage account.
 
-## 9.2 Authentication models
+## 9.2 Identity — Service Principals and Managed Identities
 
-### Azure CLI login (interactive)
-```bash
-az login                    # opens browser
-az account show
-az account list
-az account set --subscription <id>
+A **Service Principal (SP)** is a non-human identity used by automation (Terraform, CI). Has a client ID + client secret (or cert).
+
+A **Managed Identity (MI)** is an SP that Azure manages for you — no secret to rotate. Two flavors:
+
+- **System-assigned** — tied to a resource's lifecycle (deleted with the resource).
+- **User-assigned** — standalone, can be attached to multiple resources.
+
+**Rule of thumb:** prefer MI when the workload runs in Azure. Use SP only when something outside Azure (laptop, GitHub Actions) needs to authenticate.
+
+### Our lab
+
+Terraform runs from a VM with an SP (`sp-terraform`). The SP has Contributor + User Access Administrator on the subscription scope. Credentials sit in `~/.azure-lab.env` (chmod 600) and `sp-terraform.json` (gitignored).
+
+## 9.3 Networking — what's different from AWS
+
+| Concept | AWS | Azure |
+|---|---|---|
+| Private network | VPC | Virtual Network (VNet) |
+| Subnet | Subnet | Subnet |
+| Firewall (subnet-level) | NACL | NSG (Network Security Group) |
+| Firewall (instance-level) | Security Group | also NSG |
+| Public DNS | Route 53 | Azure DNS |
+| Load Balancer | ELB/ALB/NLB | Azure LB / App Gateway / Front Door |
+| Egress | NAT Gateway | NAT Gateway / Azure Firewall |
+
+### NSG gotcha (the one that bit us)
+
+Azure has **implicit** rules at priority 65000+: AllowVnetInBound, AllowAzureLoadBalancerInBound, DenyAllInBound. If you write an **explicit** `DenyAllInbound` at high priority, **it overrides the implicit allow rules.** Pod-to-pod traffic across nodes and LB health probes will break.
+
+**Fix:** either omit the explicit DenyAll and trust the implicit one, or pair it with explicit `AllowVnetInBound` and `AllowAzureLoadBalancerInBound` rules at lower priority numbers.
+
+## 9.4 AKS — the managed Kubernetes you'll see
+
+### What's managed for you
+
+- The control plane (API server, etcd, scheduler) — Microsoft runs it. You don't see the master nodes.
+- Cluster upgrades — you trigger them, AKS handles the dance.
+- Integration with Azure RBAC, AAD, ACR.
+
+### What you manage
+
+- Node pools (system + user pools).
+- Network model (kubenet vs Azure CNI).
+- Workloads, RBAC, ingress.
+
+### Network model choice
+
+| | kubenet | Azure CNI |
+|---|---|---|
+| Pod IPs | NAT'd, from a separate range | Real VNet IPs |
+| Subnet usage | Light | Heavy (one IP per pod) |
+| Performance | Slower (NAT) | Faster (direct) |
+| Network policies | Limited | Full |
+| Best for | Labs, simple setups | Production, advanced networking |
+
+**Our lab:** kubenet (lighter on IPs, fine for B2s nodes and dev work).
+
+### Node pool gotcha
+
+- **System pool** — runs CoreDNS, metrics-server. Don't taint it for workloads.
+- **User pool** — your apps. Add as separate node pools so you can scale/upgrade independently.
+
+## 9.5 ACR — Azure Container Registry
+
+```
++----------+   docker push   +---------------+   kubelet pulls   +-----+
+|  CI/dev  | --------------> | gskplat...azurecr.io| --------> | AKS |
++----------+                 +---------------+                  +-----+
 ```
 
-### Service Principal (for automation)
-A non-human identity. Has:
-- Application (Client) ID
-- Tenant ID
-- Client Secret OR certificate
+### Auth flows
 
-```bash
-# Create SP with Contributor on a subscription
-az ad sp create-for-rbac \
-  --name sp-myapp-terraform \
-  --role Contributor \
-  --scopes /subscriptions/<sub-id>
+- **From a dev box (you):** `az acr login --name <reg>` (uses your AAD token).
+- **From AKS:** attach ACR to AKS — `az aks update --attach-acr` grants the AKS managed identity `AcrPull`.
+- **From other CI:** SP with `AcrPush`/`AcrPull` role.
 
-# Output:
-# {
-#   "appId": "...",
-#   "displayName": "...",
-#   "password": "...",      ← client secret
-#   "tenant": "..."
-# }
+### Tag strategy
+
+- **Avoid `latest`** in deployments. Use SHA tags (`sha-9b61859`) for immutability.
+- **Vulnerability scanning** — ACR has built-in Defender for Containers (paid).
+- **Geo-replication** — premium SKU only.
+
+### In our lab
+
+`gskplatacrn73d5y.azurecr.io` is attached to AKS. CI builds tag `sha-<git-sha>`, pushes, and updates `values.yaml` to point at the new tag.
+
+## 9.6 Azure RBAC — the rabbit hole
+
+Azure RBAC = role assignments at scopes.
+
+```
+Scope (where it applies)   Role (what they can do)   Principal (who)
++------------------------+ +-----------------------+ +---------------+
+| /subscriptions/xxx     | | Contributor           | | sp-terraform  |
+| /resourceGroups/yyy    | | Reader                | | gopal@...     |
+| /resourceGroups/yyy/   | | User Access           | | aks-mi        |
+|  providers/.../zzz     | | Administrator         | |               |
++------------------------+ +-----------------------+ +---------------+
 ```
 
-Use the SP from Terraform:
-```bash
-export ARM_CLIENT_ID=<appId>
-export ARM_CLIENT_SECRET=<password>
-export ARM_TENANT_ID=<tenant>
-export ARM_SUBSCRIPTION_ID=<sub-id>
-```
+### Built-in roles you'll see
 
-### Workload Identity (modern, no secrets)
-
-Modern apps in AKS use Workload Identity:
-- AKS has OIDC issuer
-- Federated credential ties a k8s ServiceAccount to an Azure AD Application
-- Pod gets a JWT token, exchanges for Azure AD access token
-- No long-lived secrets
-
-Our lab still uses SP credentials (a known production gap).
-
-## 9.3 RBAC roles
-
-| Role | Permissions |
+| Role | Scope of power |
 |---|---|
-| **Owner** | Full access + can grant access |
-| **Contributor** | Full access except role assignments |
-| **User Access Administrator** | Manage role assignments |
-| **Reader** | Read-only |
-| Built-in service roles | e.g., AKS Admin, AcrPull, AcrPush |
+| Owner | Full + assign roles |
+| Contributor | Full minus assign roles |
+| Reader | Read-only |
+| User Access Administrator | Only manage role assignments |
+| AcrPull / AcrPush | ACR-specific |
+| AKS Cluster User | Pull kubeconfig |
 
-**The gotcha** our lab hit: To create role assignments in Terraform, the SP needs **both** Contributor AND User Access Administrator. Contributor alone fails with `Microsoft.Authorization/roleAssignments/write denied`.
+### The gotcha (saved us many hours)
 
-## 9.4 Key Azure services for platform engineers
+A Terraform SP with **only Contributor** will fail when it tries to create role assignments — for example, attaching ACR to AKS. Symptom: `AuthorizationFailed: ... does not have authorization to perform action 'Microsoft.Authorization/roleAssignments/write'`.
 
-### AKS (Azure Kubernetes Service)
-Managed Kubernetes. Control plane is free in Free SKU.
+**Fix:** also grant **User Access Administrator** at the subscription scope (or the relevant resource group).
 
-Key concepts:
-- **Node pool** — group of VMs running the same SKU
-- **System node pool** (required) — runs core services
-- **User node pool** (optional) — for your workloads
-- **Cluster autoscaler** — adds/removes nodes
-- **OIDC issuer** — required for Workload Identity
-- **Public vs Private** — API endpoint exposure
+## 9.7 Resource Manager — every API call goes here
 
-```bash
-# Get credentials
-az aks get-credentials -g <rg> -n <cluster>
-
-# Scale
-az aks scale -g <rg> -n <cluster> --node-count 3 --nodepool-name default
-
-# Stop (save $$, control plane stays free)
-az aks stop -g <rg> -n <cluster>
-az aks start -g <rg> -n <cluster>
+```
++----------+    HTTPS REST    +---------------------+    +----------+
+| az CLI / | ---------------> | Azure Resource Mgr  | -> | Resource |
+| Terraform|                  | (ARM API endpoint)  |    | providers|
++----------+                  +---------------------+    +----------+
 ```
 
-### ACR (Azure Container Registry)
-Docker image registry.
+Everything in Azure goes through ARM. The `az` CLI is a wrapper. Terraform is a wrapper. The portal is a wrapper. They all hit the same REST API.
 
-```bash
-# Login (uses your az login)
-az acr login -n <acr-name>
+Useful side-effect: every action has an **Activity Log** entry. Need to know who deleted the cluster? Check Activity Log.
 
-# Push
-docker tag myapp:1.0 myacr.azurecr.io/myapp:1.0
-docker push myacr.azurecr.io/myapp:1.0
+## 9.8 Gotchas (a partial list)
 
-# List images
-az acr repository list -n <acr-name>
-az acr repository show-tags -n <acr-name> --repository myapp
-```
+- **Region capacity.** Some VM SKUs are unavailable in your region/subscription. `az vm list-skus -l eastus2 --output table` to check.
+- **Quota.** New subscriptions have low CPU quotas. You'll get "QuotaExceeded" and need to file a support ticket.
+- **Delete protection.** RGs and locks can be set to "CanNotDelete." Terraform `destroy` will fail until removed.
+- **Public IP SKU mismatch.** Basic LB needs Basic PIP. Standard LB needs Standard PIP. Mix them and you get a cryptic error.
+- **Subscription ID hardcoding.** Bad — different envs different subs. Use `data "azurerm_subscription" "current"` instead.
+- **AAD vs AAD B2C vs AAD External ID.** Three different things. For platform-engineering interviews, "Microsoft Entra ID" (formerly AAD) is the one.
 
-**ACR attach to AKS** (the right way):
-```bash
-az aks update -g <rg> -n <cluster> --attach-acr <acr-name>
-```
+## 9.9 In our lab
 
-This assigns the AKS kubelet's managed identity the `AcrPull` role. No image pull secrets needed.
+- **Tenant + subscription** — your personal subscription.
+- **Resource groups** — `gskplat-prod-rg`, `gskplat-dev-rg`, plus `gskplat-bootstrap-rg` for state storage.
+- **SP** — `sp-terraform` with Contributor + User Access Administrator on the subscription.
+- **AKS** — `gskplataksn73d5y` (kubenet, B2s nodes, 1-3 node autoscale).
+- **ACR** — `gskplatacrn73d5y` (attached to AKS, allows AcrPull from the cluster's MI).
+- **Log Analytics Workspace** — `gskplat-law` for container logs and Azure Monitor.
 
-### Virtual Network (VNet)
-Private network within Azure.
-```hcl
-resource "azurerm_virtual_network" "main" {
-  name                = "myvnet"
-  resource_group_name = "myrg"
-  location            = "eastus2"
-  address_space       = ["10.0.0.0/16"]
-}
+## 9.10 Interview talking points
 
-resource "azurerm_subnet" "aks" {
-  name                 = "snet-aks"
-  resource_group_name  = "myrg"
-  virtual_network_name = azurerm_virtual_network.main.name
-  address_prefixes     = ["10.0.1.0/24"]
-}
-```
+> **Q:** "How does AKS auth to ACR?"
+>
+> "When you create AKS with `--attach-acr`, Azure grants the AKS cluster's kubelet identity the `AcrPull` role on the registry. After that, image pulls just work — no imagePullSecrets needed. Behind the scenes it's a role assignment at the ACR scope, granted to the kubelet's managed identity."
 
-### Log Analytics Workspace
-Centralized logging. AKS sends logs/metrics via the OMS agent (Container Insights).
+> **Q:** "Service Principal vs Managed Identity?"
+>
+> "SP is for workloads outside Azure — a laptop, GitHub Actions, a CI server somewhere. Has a client ID + secret you have to rotate. MI is for workloads running in Azure — VM, AKS, Function. Azure manages the credential rotation for you. **Always prefer MI when the workload is in Azure.**"
 
-### Storage Account
-Multiple services in one:
-- **Blob storage** — like S3
-- **File storage** — SMB shares
-- **Queue storage** — message queue
-- **Table storage** — key-value store
+> **Q:** "What's the difference between an RG and a subscription?"
+>
+> "Subscription is the billing boundary — everything in it bills to the same Azure agreement. RG is a logical grouping inside one subscription — deleting an RG deletes everything in it. Roles can be assigned at either scope. For multi-team setups: one subscription per team or per environment is common."
 
-Used by Terraform for state, by Velero for backups, by Azure Files PVCs.
+## 9.11 Exercises
 
-## 9.5 Free Trial constraints
-
-| Constraint | Impact |
-|---|---|
-| $200 credit, 30 days | Time pressure |
-| 4 vCPU per family per region quota | Can't run 2 separate clusters |
-| Some SKUs blocked (B-series in some regions) | Forced to D2s_v3 ($0.10/hr instead of $0.04/hr) |
-| Free SKU AKS limits | Single uptime SLA, no SLA |
-
-Our lab compensates with:
-- Single cluster + namespaces (instead of multi-cluster)
-- `az aks stop` overnight (saves ~75% cost)
-- Sidecar resource trimming
-
-## 9.6 Common az CLI commands
-
-```bash
-# Account
-az account show
-az account list-locations -o table
-
-# Resource Groups
-az group create -n myrg -l eastus2
-az group list -o table
-az group delete -n myrg --yes
-
-# AKS
-az aks create -g rg -n cluster --node-count 1 --node-vm-size Standard_D2s_v3 ...
-az aks list -o table
-az aks get-credentials -g rg -n cluster
-
-# ACR
-az acr create -g rg -n myacr --sku Basic
-az acr login -n myacr
-az acr show -n myacr
-
-# Identity / role
-az ad sp create-for-rbac --name myapp
-az role assignment create --assignee <appid> --role Reader --scope /subscriptions/<sub>
-
-# Cost
-az consumption usage list --output table
-```
-
-## 9.7 AKS networking modes
-
-| Mode | What |
-|---|---|
-| **kubenet** (default) | Pods get a non-routable IP, NATed via node IP for outbound. Simple. Limitation: pods can't directly route to other Azure resources without NAT |
-| **Azure CNI** | Pods get VNet IPs. Routable to other Azure resources. Costs more IPs from subnet |
-| **Azure CNI Overlay** | New default. Pods get overlay IPs, node IPs in VNet. Best of both |
-| **BYOCNI** | Cilium, Calico — bring your own |
-
-Our lab uses kubenet (simpler, Free Trial-friendly). Production would use Azure CNI Overlay.
-
-## 9.8 Why this matters in interviews
-
-> "When would you choose AKS over EKS or GKE?"
-
-Good answer:
-> "Mostly business reasons — alignment with existing Azure spend, Entra ID integration for SSO, ExpressRoute connections to on-prem, Microsoft enterprise agreements. Technically all three are mature. AKS has free control plane in non-paid tier, native Workload Identity, and tight Defender for Containers integration. EKS has more mature options (Fargate, multi-cluster Karpenter ecosystem). GKE invented Kubernetes and has best-in-class autopilot mode. I'd pick based on where the rest of the stack already lives."
-
-## 9.9 Exercises
-
-1. Create a free Azure account, install `az` CLI, `az login`
-2. Create a Service Principal, set ARM_* env vars
-3. Create a small AKS cluster manually with `az aks create`
-4. Connect with `az aks get-credentials`
-5. Push a Docker image to ACR
-6. `az aks stop` and verify cost stops accumulating
-7. Read costs with `az consumption usage list`
+1. `az account show` — find your subscription ID.
+2. Create an RG with `az group create`. Then with Terraform. Compare.
+3. Create an SP with `az ad sp create-for-rbac`. Use it to log in. Delete it.
+4. Create an AKS cluster manually. Then with Terraform. Compare time and YAML.
+5. Push an image to ACR with `az acr build`. Pull it from a different machine.
+6. Make a deliberate NSG mistake (block 443 inbound). Observe what breaks.
+7. Set a CanNotDelete lock on an RG. Try `terraform destroy`. Remove the lock.
 
 ---
 
-# Part II — Building the Lab
+
+# Part II — The Lab, End to End
 
 # Chapter 10: Lab Architecture Overview
 
-## 10.1 What we're building
+## 10.1 The 30-second pitch
 
-A production-pattern AKS lab:
+The lab is a working production-shaped platform you can stand up on Azure with `terraform apply` and `kubectl apply`. Three CI systems push to one cluster. ArgoCD reconciles. Prometheus watches. Argo Rollouts gates promotions. It's small enough to run on a B2s, big enough to talk about in an interview.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Azure Subscription                          │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐    │
-│  │              gskplat-rg-platform (Resource Group)         │   │
-│  │                                                           │   │
-│  │  ┌─────────────────────────────────────────────────────┐  │   │
-│  │  │            AKS cluster (2× D2s_v3)                  │  │   │
-│  │  │                                                     │  │   │
-│  │  │  Namespaces:                                        │  │   │
-│  │  │   • istio-system  (mesh + ingress gateway)          │  │   │
-│  │  │   • argocd        (GitOps controller)               │  │   │
-│  │  │   • argo-rollouts (progressive delivery controller) │  │   │
-│  │  │   • jenkins       (CI option A)                     │  │   │
-│  │  │   • monitoring    (Prometheus + Grafana)            │  │   │
-│  │  │   • dev           (3-tier app)                      │  │   │
-│  │  │   • prod          (3-tier app)                      │  │   │
-│  │  └─────────────────────────────────────────────────────┘  │   │
-│  │                                                           │   │
-│  │  ┌─────────────────┐  ┌────────────────────────────────┐  │   │
-│  │  │ ACR             │  │ VNet (10.0.0.0/16)             │  │   │
-│  │  │ container       │  │  • snet-aks (10.0.1.0/24)      │  │   │
-│  │  │ registry        │  │  • snet-apps (10.0.2.0/24)     │  │   │
-│  │  └─────────────────┘  │  • snet-mgmt (10.0.3.0/27)     │  │   │
-│  │                       └────────────────────────────────┘  │   │
-│  │                                                           │   │
-│  │  ┌─────────────────────┐                                  │   │
-│  │  │ Log Analytics WS    │  ← OMS agent on every node       │   │
-│  │  └─────────────────────┘                                  │   │
-│  └──────────────────────────────────────────────────────────┘    │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐    │
-│  │             gskplat-rg-tfstate (Resource Group)           │   │
-│  │  ┌──────────────────────┐                                 │   │
-│  │  │ Storage Account      │  ← Terraform remote state       │   │
-│  │  │ (tfstate container)  │                                 │   │
-│  │  └──────────────────────┘                                 │   │
-│  └──────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────┘
-
-         ▲                                          ▲
-         │                                          │
-         │ Terraform (IaC)                          │ helm + kubectl
-         │                                          │
-┌────────┴──────────┐                ┌──────────────┴─────────┐
-│   Developer VM    │                │   CI/CD systems        │
-│                   │                │                        │
-│  • Terraform CLI  │                │  • Jenkins (in-cluster)│
-│  • Azure CLI      │                │  • GitHub Actions (SaaS)│
-│  • kubectl        │                │  • CircleCI (SaaS)     │
-│  • helm           │                │                        │
-│  • git            │                │                        │
-└───────────────────┘                └────────────────────────┘
-```
-
-## 10.2 The 6 iterations
-
-Each iteration ships a working slice:
+## 10.2 The big picture
 
 ```
-Iter 1  Bootstrap state + Network                  →  RG, LAW, VNet, NSGs
-Iter 2  ACR + AKS                                    →  registry + cluster
-Iter 3  Platform components                          →  Istio, ArgoCD, Jenkins
-Iter 4  Three-tier app (placeholders)                →  Helm chart, namespaces, VirtualServices
-Iter 5  Real app code + Jenkins CI                   →  kaniko builds, helm deploys
-Iter 6  GitHub Actions + Argo Rollouts + Prometheus  →  GitOps, blue/green, analysis gates
-Iter 7  CircleCI (third CI for portfolio)            →  same GitOps pattern, different toolchain
+                           +-----------------+
+                           |   GitHub repo   |
+                           |  (source of     |
+                           |   truth)        |
+                           +--------+--------+
+                                    |
+              +---------------------+---------------------+
+              |                     |                     |
+        +-----v-----+         +-----v-----+         +-----v-----+
+        |  Jenkins  |         |   GHA     |         | CircleCI  |
+        | (in-cluster)        |  (cloud)  |         |  (cloud)  |
+        +-----+-----+         +-----+-----+         +-----+-----+
+              |                     |                     |
+              | build sha-XXX       | build sha-XXX       | build sha-XXX
+              | push to ACR         | push to ACR         | push to ACR
+              | commit values       | commit values       | commit values
+              v                     v                     v
+                          +---------+---------+
+                          |       ACR         |
+                          | gskplatacrn73d5y  |
+                          +---------+---------+
+                                    |
+                                    v
+              +-----------------------------------------------+
+              |                  AKS cluster                  |
+              |  +-------------+   +-------------+            |
+              |  | ArgoCD      |-->| three-tier  |            |
+              |  | (apps)      |   | (helm)      |            |
+              |  +-------------+   +------+------+            |
+              |                           |                   |
+              |  +-------------+   +------v------+            |
+              |  | Argo        |-->| Rollout     |            |
+              |  | Rollouts    |   | (blue/green)|            |
+              |  +-------------+   +-------------+            |
+              |                                               |
+              |  +-------------+   +-------------+            |
+              |  | Prometheus  |<--| Istio +     |            |
+              |  | + Grafana   |   | PodMonitor  |            |
+              |  +-------------+   +-------------+            |
+              +-----------------------------------------------+
 ```
 
-## 10.3 The lab tells three CI stories
+## 10.3 Components inventory
 
-| Story | Tool | Pattern |
+| Layer | Component | What it does |
 |---|---|---|
-| Old school | Jenkins | In-cluster, helm directly |
-| Modern SaaS | GitHub Actions | GitOps via commit-to-Git |
-| Multi-team SaaS | CircleCI | GitOps with Contexts (RBAC for secrets) |
+| Infra (Terraform) | Resource Groups, VNet, NSGs, AKS, ACR, Log Analytics | The Azure substrate |
+| Platform (Helm/manifests) | Istio, ArgoCD, Argo Rollouts, kube-prometheus-stack, Jenkins | The shared services |
+| App (Helm) | three-tier umbrella: frontend (nginx), backend (httpd), database (postgres) | What we deploy |
+| CI | Jenkins (in-cluster), GitHub Actions, CircleCI | Three independent CI demonstrations |
+| GitOps | ArgoCD apps + Application sets | Watches Git, reconciles cluster |
+| Progressive delivery | Argo Rollouts + AnalysisTemplate | Blue/green with Prometheus gate |
+| Observability | Prometheus, Grafana, PodMonitor for Istio | Metrics + dashboards |
 
-You can speak to any of them in an interview.
+## 10.4 The repository layout
 
-## 10.4 Why this architecture
+```
+azure-platform-lab/
++-- infra/                       # Terraform
+|   +-- bootstrap/               # state storage (run once)
+|   +-- modules/
+|   |   +-- network/             # VNet, subnets, NSGs
+|   |   +-- aks/
+|   |   +-- acr/
+|   |   +-- monitoring/
+|   +-- live/
+|       +-- dev/
+|       +-- prod/
++-- kubernetes/
+|   +-- platform/                # platform component manifests
+|   |   +-- argocd/
+|   |   +-- argo-rollouts/
+|   |   +-- istio/
+|   |   +-- prometheus/
+|   +-- apps/
+|       +-- three-tier/
+|           +-- Chart.yaml
+|           +-- values.yaml
+|           +-- values-dev.yaml
+|           +-- values-prod.yaml
+|           +-- charts/
+|               +-- frontend/
+|               +-- backend/
+|               +-- database/
++-- ci/
+|   +-- jenkins/Jenkinsfile
+|   +-- .github/workflows/ci-cd.yaml
+|   +-- .circleci/config.yml
++-- docs/
+|   +-- textbook/
+|       +-- platform-engineering-handbook.md
+|       +-- glossary-and-tips.md
+|       +-- Makefile
++-- README.md
+```
 
-Choices and rationales:
+## 10.5 What you can demo
 
-| Choice | Why |
+- **End-to-end build:** push a commit, watch CI build, see ArgoCD apply, see rollout progress.
+- **Blue/green gate:** trigger a deploy with a bad backend, watch the analysis fail and rollout pause.
+- **Three CIs, one cluster:** the same change ships via Jenkins, GHA, or CircleCI — all converge on the same Git state.
+- **Drift remediation:** edit a Deployment directly in the cluster, watch ArgoCD revert it (selfHeal).
+- **Observability:** Grafana dashboards for Istio mesh, rollout success rate, request latency.
+
+## 10.6 Costs
+
+A rough monthly idle cost in eastus2:
+
+| Resource | ~USD/month |
 |---|---|
-| Single AKS cluster, namespace isolation | Free Trial quota constraint |
-| kubenet not Azure CNI | Simpler IPs, Free Trial-friendly |
-| Istio not Linkerd | More widely deployed in interviews |
-| ArgoCD not Flux | More widely deployed; better UI |
-| Argo Rollouts not Flagger | Pairs cleanly with ArgoCD (same org) |
-| Helm not Kustomize | More widely deployed |
-| Two-gate analysis (min-traffic + success) | Prevents false positives from zero-traffic |
-| Git SHA as image tag | Immutable, traceable, enables build-once-deploy-many |
+| AKS control plane | free (uptime tier) |
+| 1x Standard_B2s node | ~$30 |
+| 1x Public IP (Standard) | ~$4 |
+| ACR Basic | ~$5 |
+| Log Analytics (low ingest) | ~$5 |
+| Storage (state + logs) | ~$1 |
+| **Total** | **~$45** |
+
+**Tear it down when you're not using it:** `terraform destroy` everything except `bootstrap/` (state storage). Stand back up in ~15 minutes.
+
+## 10.7 What this lab is *not*
+
+- Not multi-region or HA.
+- Not network-isolated (public LB, no private endpoints).
+- Not paying for premium ACR features (geo-replication, content trust).
+- Not running on managed Postgres (we use a Postgres StatefulSet for cost).
+
+These are the production gaps we discuss in [Chapter 20](#chapter-20-production-grade-gaps).
 
 ---
 
 # Chapter 11: Iteration 1 — Bootstrap and Network
 
-## 11.1 The chicken-and-egg fix
+## 11.1 Goal of this iteration
 
-You need a state SA before you can use one. Bootstrap solves this:
+Get the foundation in place: a remote state backend, a resource group, networking, and observability plumbing. **No cluster yet.** This iteration is about giving every later iteration a place to stand.
 
-```
-terraform/
-├── bootstrap/             ← local state, runs ONCE
-│   ├── main.tf            (creates the state SA)
-│   ├── variables.tf
-│   ├── outputs.tf
-│   └── terraform.tfvars.example
-└── live/                  ← remote state, your daily work
-    ├── main.tf            (uses the SA from bootstrap)
-    └── ...
-```
-
-### Bootstrap workflow
+## 11.2 What we create
 
 ```
-1. cd terraform/bootstrap
-2. cp terraform.tfvars.example terraform.tfvars  (edit owner email)
-3. terraform init                                 (local backend)
-4. terraform apply                                (creates SA in cloud)
-5. Note the `backend_init_command_live` output
-6. cd ../live
-7. terraform init -backend-config="storage_account_name=..." 
-                  -backend-config="container_name=tfstate"
-                  ...
-   (now using remote state)
++---------------------------+
+| Bootstrap RG              |
+|  +-- storage account      |   <-- holds tfstate blobs
+|  +-- container "tfstate"  |
++---------------------------+
+
++---------------------------+
+| Workload RG (gskplat-rg)  |
+|  +-- VNet (10.42.0.0/16)  |
+|  |   +-- subnet aks (10.42.1.0/24)
+|  |   +-- subnet svc (10.42.2.0/24)
+|  +-- NSG (attached to aks subnet)
+|  +-- Log Analytics workspace
++---------------------------+
 ```
 
-After this, you should NEVER need to touch bootstrap again. It just sits there.
+## 11.3 Why this order
 
-## 11.2 The `bootstrap/main.tf`
+You can't store Terraform state in a backend that doesn't exist yet. Chicken-and-egg. The fix is **bootstrap**:
+
+```
+Step 1: bootstrap/ uses LOCAL state to create the storage account.
+Step 2: We commit the bootstrap state file (it has no secrets).
+Step 3: live/ uses REMOTE state pointing at that storage account.
+```
+
+After bootstrap, every other Terraform configuration uses remote state. You never touch the bootstrap state file again — it sits there as a tiny config.
+
+## 11.4 The bootstrap
 
 ```hcl
-terraform {
-  required_version = ">= 1.5"
-  required_providers {
-    azurerm = { source = "hashicorp/azurerm", version = "~> 3.0" }
-    random  = { source = "hashicorp/random",  version = "~> 3.5" }
-  }
-}
-
-provider "azurerm" {
-  features {}
-}
-
-# Random suffix so the SA name is globally unique
-resource "random_string" "sa_suffix" {
-  length  = 6
-  upper   = false
-  special = false
-  numeric = true
-}
-
+# infra/bootstrap/main.tf
 resource "azurerm_resource_group" "tfstate" {
-  name     = "${var.project}-rg-tfstate"
+  name     = "gskplat-bootstrap-rg"
   location = var.location
-  tags     = var.tags
 }
 
 resource "azurerm_storage_account" "tfstate" {
-  name                            = "${var.project}tfstate${random_string.sa_suffix.result}"
-  resource_group_name             = azurerm_resource_group.tfstate.name
-  location                        = azurerm_resource_group.tfstate.location
-  account_tier                    = "Standard"
-  account_replication_type        = "LRS"
-  allow_nested_items_to_be_public = false
-  min_tls_version                 = "TLS1_2"
-  tags                            = var.tags
+  name                     = "gskplattfstate"  # globally unique
+  resource_group_name      = azurerm_resource_group.tfstate.name
+  location                 = var.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+
+  blob_properties {
+    versioning_enabled = true     # state has secrets, keep history
+  }
 }
 
 resource "azurerm_storage_container" "tfstate" {
   name                  = "tfstate"
-  storage_account_id    = azurerm_storage_account.tfstate.id
+  storage_account_name  = azurerm_storage_account.tfstate.name
   container_access_type = "private"
 }
 ```
 
-Key choices explained:
-- **LRS** (Locally Redundant Storage) — cheapest, 3 copies within a single data center. State files are small and recoverable
-- **Random suffix** — Storage Account names must be globally unique
-- **`min_tls_version = "TLS1_2"`** — security best practice
-
-## 11.3 The network module
+## 11.5 The live config
 
 ```hcl
-# modules/network/main.tf
+# infra/live/prod/backend.tf
+terraform {
+  backend "azurerm" {
+    resource_group_name  = "gskplat-bootstrap-rg"
+    storage_account_name = "gskplattfstate"
+    container_name       = "tfstate"
+    key                  = "prod.tfstate"
+  }
+}
+```
 
-resource "azurerm_virtual_network" "main" {
-  name                = "${var.project}-vnet-shared"
-  resource_group_name = var.resource_group_name
+```hcl
+# infra/live/prod/main.tf
+module "network" {
+  source              = "../../modules/network"
+  resource_group_name = azurerm_resource_group.workload.name
   location            = var.location
-  address_space       = [var.vnet_cidr]
-  tags                = var.tags
+  address_space       = ["10.42.0.0/16"]
+  subnets = {
+    aks = "10.42.1.0/24"
+    svc = "10.42.2.0/24"
+  }
 }
 
-# Subnet for AKS
-resource "azurerm_subnet" "aks" {
-  name                 = "snet-aks"
-  resource_group_name  = var.resource_group_name
-  virtual_network_name = azurerm_virtual_network.main.name
-  address_prefixes     = [cidrsubnet(var.vnet_cidr, 8, 1)]   # /24 from /16
-}
-
-# Subnet for management
-resource "azurerm_subnet" "mgmt" {
-  name                 = "snet-mgmt"
-  resource_group_name  = var.resource_group_name
-  virtual_network_name = azurerm_virtual_network.main.name
-  address_prefixes     = [cidrsubnet(var.vnet_cidr, 11, 24)] # /27 from /16
-}
-```
-
-## 11.4 NSGs — the explicit deny gotcha
-
-We added NSGs with explicit deny-all rules. This broke pod-to-pod traffic across nodes.
-
-```hcl
-resource "azurerm_network_security_group" "aks" {
-  name                = "nsg-aks"
-  resource_group_name = var.resource_group_name
+module "monitoring" {
+  source              = "../../modules/monitoring"
+  resource_group_name = azurerm_resource_group.workload.name
   location            = var.location
-
-  # CRITICAL: explicit allows BEFORE explicit deny
-  security_rule {
-    name                       = "AllowVnetInbound"
-    priority                   = 1000
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "*"
-    source_port_range          = "*"
-    destination_port_range     = "*"
-    source_address_prefix      = "VirtualNetwork"
-    destination_address_prefix = "VirtualNetwork"
-  }
-
-  security_rule {
-    name                       = "AllowAzureLoadBalancerInbound"
-    priority                   = 1100
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "*"
-    source_port_range          = "*"
-    destination_port_range     = "*"
-    source_address_prefix      = "AzureLoadBalancer"
-    destination_address_prefix = "*"
-  }
-
-  # Explicit deny at high priority
-  security_rule {
-    name                       = "DenyAllInboundExplicit"
-    priority                   = 4000
-    direction                  = "Inbound"
-    access                     = "Deny"
-    protocol                   = "*"
-    source_port_range          = "*"
-    destination_port_range     = "*"
-    source_address_prefix      = "*"
-    destination_address_prefix = "*"
-  }
+  workspace_name      = "gskplat-law"
 }
 ```
 
-### Why this matters
+## 11.6 NSG rules — get them right early
 
-Azure's implicit allows are at priority 65000+ (lowest priority). An explicit Deny at priority 4000 fires FIRST. Without the explicit allows at 1000/1100, you've effectively denied all cluster-internal traffic.
+Our NSG starts with the implicit rules: AllowVnetInBound, AllowAzureLoadBalancerInBound, DenyAllInBound. We **don't** add an explicit DenyAll. We only add an allow for SSH from our home IP if we plan to put a jumpbox in the subnet (we don't for AKS subnets).
 
-This is a real interview question: "Why would adding a Deny rule break a working cluster?"
+> See gotcha in 9.3. We learned this the hard way.
 
-## 11.5 Outputs
-
-```hcl
-output "vnet_id" {
-  value = azurerm_virtual_network.main.id
-}
-
-output "aks_subnet_id" {
-  value = azurerm_subnet.aks.id
-}
-
-output "law_id" {
-  value = azurerm_log_analytics_workspace.shared.id
-}
-```
-
-Other modules consume these outputs by referring to `module.network.aks_subnet_id`.
-
-## 11.6 Apply iter 1
+## 11.7 Verifying
 
 ```bash
-cd terraform/live
-cp terraform.tfvars.example terraform.tfvars
-# Edit: set admin_ip_cidr to your /32
-terraform init      # paste backend command from bootstrap output
-terraform plan      # expect ~12 resources to add
+cd infra/bootstrap && terraform init && terraform apply
+cd ../live/prod && terraform init && terraform plan
 terraform apply
 ```
 
-After iter 1: RG, LAW, VNet, 3 subnets, 3 NSGs.
+After this, you should have:
 
-Cost so far: < $1/month.
+- A storage account with a `tfstate` container
+- A workload RG with an empty VNet
+- A Log Analytics workspace ready to receive logs
+
+## 11.8 What iteration 1 *doesn't* have
+
+- No cluster.
+- No registry.
+- No apps.
+
+It's just the substrate. Move to iteration 2 to get a cluster.
 
 ---
 
 # Chapter 12: Iteration 2 — ACR and AKS
 
-## 12.1 ACR module
+## 12.1 Goal
 
-```hcl
-# modules/acr/main.tf
+Stand up the cluster and the registry, attach them, and verify you can deploy a "hello world" pod.
 
-resource "random_string" "acr_suffix" {
-  length  = 6
-  upper   = false
-  special = false
-  numeric = true
-}
+## 12.2 What we create
 
-resource "azurerm_container_registry" "main" {
-  name                = "${var.project}acr${random_string.acr_suffix.result}"
-  resource_group_name = var.resource_group_name
-  location            = var.location
-  sku                 = "Basic"        # Cheapest tier
-  admin_enabled       = false          # Force RBAC auth (security best practice)
-  tags                = var.tags
-}
+```
++--------------------------------+
+| RG: gskplat-rg                 |
+|  +-- ACR (gskplatacrn73d5y)    |
+|  +-- AKS (gskplataksn73d5y)    |
+|       |                        |
+|       +-- system node pool (1x Standard_B2s)
+|       +-- (later) user node pool
+|       +-- kubelet MI gets AcrPull on ACR
++--------------------------------+
 ```
 
-`admin_enabled = false` is important — it forces all auth through Azure AD, not via a shared username/password.
+## 12.3 The AKS module
 
-## 12.2 AKS module
+Key choices we lock in (see [pinned decisions](#pinned-decisions-in-our-lab)):
+
+| Choice | Value | Why |
+|---|---|---|
+| Region | eastus2 | Cheap, ample SKU availability |
+| Node SKU | Standard_B2s | 2 vCPU, 4 GB — fits in free credit |
+| Network | kubenet | Lower IP usage, fine for one cluster |
+| Identity | System-assigned MI | One less thing to manage |
+| RBAC | Azure RBAC | Use AAD identities for kubectl |
 
 ```hcl
-# modules/aks/main.tf
-
-resource "azurerm_kubernetes_cluster" "main" {
-  name                = "${var.project}-aks-shared"
-  resource_group_name = var.resource_group_name
+# infra/modules/aks/main.tf
+resource "azurerm_kubernetes_cluster" "this" {
+  name                = var.name
   location            = var.location
-  dns_prefix          = "${var.project}-aks"
-  kubernetes_version  = "1.34"
+  resource_group_name = var.resource_group_name
+  dns_prefix          = var.name
+  kubernetes_version  = var.kubernetes_version
 
   default_node_pool {
-    name                = "system"
-    node_count          = var.node_count
-    vm_size             = "Standard_D2s_v3"
-    vnet_subnet_id      = var.aks_subnet_id
-    type                = "VirtualMachineScaleSets"
-    only_critical_addons_enabled = false   # allow user workloads (single pool)
+    name           = "system"
+    node_count     = 1
+    vm_size        = "Standard_B2s"
+    vnet_subnet_id = var.aks_subnet_id
   }
 
   identity {
@@ -2473,567 +3652,449 @@ resource "azurerm_kubernetes_cluster" "main" {
   }
 
   network_profile {
-    network_plugin = "kubenet"            # Free Trial-friendly
-    load_balancer_sku = "standard"
-    service_cidr   = "172.16.0.0/16"
-    dns_service_ip = "172.16.0.10"
+    network_plugin = "kubenet"
   }
 
-  # API server access — restrict to your IP only
-  api_server_access_profile {
-    authorized_ip_ranges = [var.admin_ip_cidr]
-  }
-
-  # OIDC issuer — required for Workload Identity (even if you don't use it now)
-  oidc_issuer_enabled = true
-  workload_identity_enabled = true
-
-  # Log Analytics integration
   oms_agent {
     log_analytics_workspace_id = var.law_id
   }
-
-  sku_tier = "Free"      # Free SKU, single uptime SLA
-  tags     = var.tags
 }
+```
 
-# Grant AKS kubelet identity permission to pull from ACR
-resource "azurerm_role_assignment" "aks_to_acr" {
-  scope                = var.acr_id
+## 12.4 Attaching ACR to AKS
+
+This was the line that taught us about User Access Administrator:
+
+```hcl
+resource "azurerm_role_assignment" "aks_acr_pull" {
+  scope                = azurerm_container_registry.this.id
   role_definition_name = "AcrPull"
-  principal_id         = azurerm_kubernetes_cluster.main.kubelet_identity[0].object_id
-}
-
-# Grant Terraform SP cluster admin for kubectl access
-resource "azurerm_role_assignment" "sp_to_aks" {
-  scope                = azurerm_kubernetes_cluster.main.id
-  role_definition_name = "Azure Kubernetes Service Cluster Admin Role"
-  principal_id         = var.terraform_sp_object_id
+  principal_id         = azurerm_kubernetes_cluster.this.kubelet_identity[0].object_id
 }
 ```
 
-### The RBAC gotcha
+For this `role_assignment` to succeed, the Terraform SP needs `Microsoft.Authorization/roleAssignments/write` — which **Contributor doesn't have.** Add **User Access Administrator** on the subscription, and it works.
 
-Without `User Access Administrator` on the SP, `azurerm_role_assignment` fails with:
-```
-Microsoft.Authorization/roleAssignments/write is not allowed
-```
-
-Add UAA to the SP at subscription scope:
-```bash
-az role assignment create \
-  --assignee <sp-app-id> \
-  --role "User Access Administrator" \
-  --scope /subscriptions/<sub-id>
-```
-
-## 12.3 Apply iter 2
+## 12.5 Getting credentials
 
 ```bash
-terraform plan     # ~5 new resources (ACR, AKS, 2 role assignments)
-terraform apply    # ~10 min — AKS provisioning
-```
-
-## 12.4 Get cluster access
-
-```bash
-az aks get-credentials -g gskplat-rg-platform -n gskplat-aks-shared --overwrite-existing
+az aks get-credentials -g gskplat-rg -n gskplataksn73d5y
 kubectl get nodes
+# NAME                              STATUS   ROLES   AGE   VERSION
+# aks-system-12345678-vmss000000    Ready    agent   2m    v1.29.x
 ```
 
-You should see your node(s) `Ready`.
+## 12.6 Smoke test
+
+```bash
+kubectl run hello --image=gskplatacrn73d5y.azurecr.io/library/nginx:alpine --restart=Never
+kubectl get pod hello
+kubectl logs hello
+kubectl delete pod hello
+```
+
+If the image pull works, ACR-to-AKS auth is wired. If it doesn't:
+
+| Symptom | Likely cause |
+|---|---|
+| `ImagePullBackOff` + "unauthorized" | AcrPull role not yet propagated (wait 2 min) or wrong principal |
+| `ErrImagePull` + "not found" | Image not in ACR (push it first with `az acr import`) |
+| Pod never schedules | Node pool is `cordoned`, NSG mistake, or out of capacity |
+
+## 12.7 What iteration 2 *doesn't* have
+
+- No Ingress (we expose later via Istio).
+- No platform tooling (ArgoCD, Prometheus come in iteration 3).
+- No real app (iteration 4).
+
+You can already deploy raw YAML to it. The next iteration makes the cluster manageable.
 
 ---
 
 # Chapter 13: Iteration 3 — Platform Components
 
-Three things go on the cluster: Istio (service mesh), ArgoCD (GitOps), Jenkins (CI).
+## 13.1 Goal
 
-## 13.1 Istio
+Install the shared platform services: Istio (mesh + ingress), ArgoCD (GitOps), Argo Rollouts (progressive delivery), Prometheus + Grafana (observability), and Jenkins (in-cluster CI for the demo).
 
-### Why a service mesh?
-
-Service mesh adds, transparent to your app:
-- **mTLS** between services (encryption + identity)
-- **Observability** (request rate, latency, error rate as metrics)
-- **Traffic management** (routing, retries, timeouts, circuit breaking)
-- **Canary deployments** (weighted traffic to versions)
-
-Without a mesh, you'd implement each of these in your app. Same goes for every microservice. Painful.
-
-### The Istio architecture
+## 13.2 The order matters
 
 ```
-┌─────────────────────────────────────────────────┐
-│                     Cluster                      │
-│                                                  │
-│  ┌──────────────┐    Control plane (istio-system)│
-│  │   istiod     │    Pushes config to sidecars   │
-│  └──────┬───────┘                                │
-│         │                                        │
-│  ┌──────▼──────────────────────────────────┐    │
-│  │  Application Pod (your namespace)        │    │
-│  │  ┌──────────────┐  ┌─────────────────┐   │    │
-│  │  │ App container│◄─┤ istio-proxy     │   │    │
-│  │  │              │  │ (Envoy sidecar) │   │    │
-│  │  └──────────────┘  └─────────────────┘   │    │
-│  │   ▲                          ▲           │    │
-│  │   │                          │           │    │
-│  │   localhost                  external    │    │
-│  └──────────────────────────────────────────┘    │
-│                                                  │
-│  ┌──────────────────────────────────────────┐    │
-│  │  istio-ingress (gateway) — public LB    │    │
-│  └──────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────┘
+1. Istio           (provides ingress for the rest)
+2. ArgoCD          (manages itself + everything else once installed)
+3. Argo Rollouts   (needed before any Rollout-based chart)
+4. kube-prometheus-stack (CRDs first; PodMonitors come later)
+5. Jenkins         (uses Istio gateway, scrapes via Prometheus)
 ```
 
-Every Pod with `istio-injection: enabled` namespace label gets an `istio-proxy` sidecar injected. The sidecar:
-- Intercepts ALL traffic in/out of the Pod (using iptables rules)
-- Encrypts with mTLS
-- Exports metrics to Prometheus
-- Applies routing rules from VirtualServices
+We install each via Helm or kubectl-applied manifests. After ArgoCD is up, ArgoCD applies the rest (manage itself, then everyone else).
 
-### Install Istio (Helm)
+## 13.3 Istio (ingress only mode)
 
-```bash
-helm repo add istio https://istio-release.storage.googleapis.com/charts
-helm repo update istio
-
-helm install istio-base istio/base -n istio-system --create-namespace --wait
-helm install istiod istio/istiod -n istio-system --values kubernetes/istio/istiod-values.yaml --wait
-helm install istio-ingress istio/gateway -n istio-system --values kubernetes/istio/gateway-values.yaml --wait
-```
-
-Three Helm releases:
-- `istio-base` — CRDs
-- `istiod` — control plane
-- `istio-ingress` — public-facing gateway
-
-### Gateway and VirtualService
-
-A **Gateway** describes a load balancer at the edge of the mesh:
+We use Istio as the cluster ingress. mTLS is set to PERMISSIVE so non-mesh pods can still call each other while we adopt incrementally.
 
 ```yaml
-apiVersion: networking.istio.io/v1
+# kubernetes/platform/istio/istio-operator.yaml (excerpt)
+apiVersion: install.istio.io/v1alpha1
+kind: IstioOperator
+spec:
+  profile: default
+  meshConfig:
+    enableAutoMtls: true
+  components:
+    ingressGateways:
+      - name: istio-ingressgateway
+        enabled: true
+        k8s:
+          service:
+            type: LoadBalancer
+```
+
+```yaml
+# kubernetes/platform/istio/gateway.yaml
+apiVersion: networking.istio.io/v1beta1
 kind: Gateway
 metadata:
-  name: three-tier-gateway
+  name: main-gateway
   namespace: istio-system
 spec:
   selector:
-    istio: ingress       # matches the ingress-gateway pod
+    istio: ingressgateway
   servers:
-    - port:
-        number: 80
-        name: http
-        protocol: HTTP
-      hosts:
-        - "dev.gskplat.local"
-        - "prod.gskplat.local"
-        - "*"             # fallback
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "*"
 ```
 
-A **VirtualService** describes routing rules:
+The LoadBalancer Service gets a public IP from Azure. That's the cluster's front door.
 
-```yaml
-apiVersion: networking.istio.io/v1
-kind: VirtualService
-metadata:
-  name: three-tier-dev
-  namespace: dev
-spec:
-  hosts:
-    - "dev.gskplat.local"
-    - "dev.lvh.me"
-  gateways:
-    - istio-system/three-tier-gateway
-  http:
-    - match:
-        - uri:
-            prefix: /api/
-      route:
-        - destination:
-            host: backend.dev.svc.cluster.local
-            port:
-              number: 5678
-    - route:
-        - destination:
-            host: frontend.dev.svc.cluster.local
-            port:
-              number: 80
-```
-
-This routes:
-- `dev.gskplat.local/api/*` → backend service
-- `dev.gskplat.local/*` → frontend service
-
-### Sidecar tuning (the resource gotcha)
-
-Default Istio sidecars request 100m CPU each. With many pods on a small cluster, scheduler runs out of CPU.
-
-Add per-pod annotations:
-```yaml
-metadata:
-  annotations:
-    sidecar.istio.io/proxyCPU: "10m"
-    sidecar.istio.io/proxyMemory: "64Mi"
-    sidecar.istio.io/proxyCPULimit: "100m"
-    sidecar.istio.io/proxyMemoryLimit: "256Mi"
-```
-
-Or opt out completely (e.g., for stateful DBs):
-```yaml
-metadata:
-  annotations:
-    sidecar.istio.io/inject: "false"
-```
-
-## 13.2 ArgoCD
-
-### Why GitOps?
-
-CI doing `kubectl apply` works but loses these:
-- **Audit trail** — who changed cluster state, when, why?
-- **Source of truth** — Git or cluster? They diverge silently
-- **Rollback** — manual coordination
-- **Disaster recovery** — re-create cluster from Git
-
-GitOps fixes this:
-- **Git is the source of truth**
-- A controller (ArgoCD) syncs cluster to match Git
-- Drift is detected and (optionally) auto-corrected
-- Every deploy is a reviewable commit
-
-### Install ArgoCD
+## 13.4 ArgoCD
 
 ```bash
-helm repo add argo https://argoproj.github.io/argo-helm
-helm install argocd argo/argo-cd -n argocd --create-namespace --values kubernetes/argocd/values.yaml --wait
+kubectl create ns argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 ```
 
-### Application CRD
+Then expose via VirtualService and create our `app-of-apps`:
 
-An ArgoCD `Application` says "watch this Git path, sync to this cluster path":
+```yaml
+# kubernetes/platform/argocd/root-app.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/gopalskhandale/azure-platform-lab
+    path: kubernetes/platform
+    targetRevision: HEAD
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: false           # we explicitly opt-in to prune later
+```
+
+After this, ArgoCD watches the `kubernetes/platform/` directory and reconciles everything underneath. The pattern is called **App of Apps**: the root app deploys other Application objects.
+
+## 13.5 Argo Rollouts
+
+```bash
+kubectl create namespace argo-rollouts
+kubectl apply -n argo-rollouts \
+  -f https://github.com/argoproj/argo-rollouts/releases/latest/download/install.yaml
+```
+
+Argo Rollouts gives us a `Rollout` CRD that behaves like a Deployment but adds **blue/green** and **canary** strategies plus **AnalysisTemplate** for promotion gating. Iteration 6 wires it into the three-tier app.
+
+## 13.6 kube-prometheus-stack
+
+Helm:
+
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm install kps prometheus-community/kube-prometheus-stack \
+  -n monitoring --create-namespace \
+  -f values.yaml
+```
+
+The chart installs Prometheus Operator, Prometheus, Alertmanager, Grafana, and all the CRDs (`ServiceMonitor`, `PodMonitor`, `PrometheusRule`).
+
+A `PodMonitor` is what we use for Istio — Envoy sidecars expose `/stats/prometheus` on port 15090:
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: envoy-stats-monitor
+  namespace: istio-system
+spec:
+  selector:
+    matchExpressions:
+      - { key: istio-prometheus-ignore, operator: DoesNotExist }
+  namespaceSelector:
+    any: true
+  jobLabel: envoy-stats
+  podMetricsEndpoints:
+  - path: /stats/prometheus
+    interval: 15s
+    relabelings:
+    - action: keep
+      sourceLabels: [__meta_kubernetes_pod_container_name]
+      regex: istio-proxy
+```
+
+## 13.7 Jenkins (in-cluster)
+
+We deploy Jenkins via the official Helm chart with kaniko agents. The interesting bits:
+
+- ServiceAccount with `system:auth-delegator` (cluster-scoped).
+- A volume mount for the ACR docker config (so kaniko can push).
+- An in-cluster `jenkins` Service, fronted by an Istio VirtualService.
+
+Why in-cluster? Because then Jenkins can run `kubectl`/`helm` directly against the cluster API without external auth, demonstrating a "CI lives next to the workload" pattern.
+
+## 13.8 Verifying
+
+After iteration 3, `kubectl get apps -n argocd` shows several Applications, all healthy and synced:
+
+```
+NAME                SYNC STATUS   HEALTH
+root                Synced        Healthy
+istio               Synced        Healthy
+argo-rollouts       Synced        Healthy
+kube-prometheus     Synced        Healthy
+jenkins             Synced        Healthy
+```
+
+Open Grafana via port-forward → see the kube-state-metrics dashboards. Open ArgoCD UI → see the app tree. Open Jenkins → log in with the bootstrap admin password from a Secret.
+
+## 13.9 What iteration 3 *doesn't* have yet
+
+- No application code.
+- No CI pipelines wired to a real app.
+- No progressive delivery in practice (Rollouts is installed but not used).
+
+Iteration 4 adds the app.
+
+---
+
+# Chapter 14: Iteration 4 — Three-Tier App (Helm)
+
+## 14.1 Goal
+
+Define the application — frontend, backend, database — as a Helm umbrella chart, with separate `values-dev.yaml` and `values-prod.yaml` for environment differences.
+
+## 14.2 The shape
+
+```
++----------+   HTTP   +----------+   TCP   +----------+
+| frontend |--------->| backend  |-------->| database |
+| (nginx)  |          | (httpd)  |         | (postgres)
+| Rollout  |          | Rollout  |         | StatefulSet
++----------+          +----------+         +----------+
+     ^                                          
+     | Ingress (Istio Gateway + VirtualService)
+     |
+   public IP
+```
+
+- **frontend** — nginx, serves a tiny HTML page with a "greeting" injected from values. Calls the backend on `/api`.
+- **backend** — httpd, echos a message + headers. Has a `/health` endpoint.
+- **database** — postgres 15-alpine StatefulSet with a PVC.
+
+## 14.3 Chart layout
+
+```
+kubernetes/apps/three-tier/
+  Chart.yaml
+  values.yaml            <-- defaults
+  values-dev.yaml        <-- dev overrides
+  values-prod.yaml       <-- prod overrides
+  charts/
+    frontend/
+      Chart.yaml
+      values.yaml
+      templates/
+        rollout.yaml
+        service.yaml
+        configmap.yaml
+        virtualservice.yaml
+    backend/
+      Chart.yaml
+      values.yaml
+      templates/
+        rollout.yaml
+        service.yaml
+    database/
+      Chart.yaml
+      values.yaml
+      templates/
+        statefulset.yaml
+        service.yaml
+        secret.yaml
+```
+
+The umbrella `Chart.yaml` declares dependencies on the three subcharts.
+
+## 14.4 Values pattern
+
+```yaml
+# values.yaml (defaults)
+frontend:
+  image:
+    repository: nginx
+    tag: latest
+  replicaCount: 1
+  greeting: Hello from Helm
+  resources:
+    requests: { cpu: 30m, memory: 32Mi }
+    limits:   { cpu: 100m, memory: 128Mi }
+backend:
+  image:
+    repository: httpd
+    tag: alpine
+  replicaCount: 1
+database:
+  image:
+    repository: postgres
+    tag: 15-alpine
+  database: appdb
+  username: appuser
+  password: change-me
+```
+
+```yaml
+# values-prod.yaml (overrides)
+frontend:
+  image:
+    repository: gskplatacrn73d5y.azurecr.io/three-tier/frontend
+    tag: sha-9b61859
+  greeting: Hello from PROD
+backend:
+  image:
+    repository: gskplatacrn73d5y.azurecr.io/three-tier/backend
+    tag: sha-9b61859
+  env:
+    APP_ENV: prod
+```
+
+## 14.5 Frontend template (without rollouts yet)
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment           # <-- becomes Rollout in iter 6
+metadata:
+  name: {{ .Release.Name }}-frontend
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: { app: frontend }
+  template:
+    metadata:
+      labels: { app: frontend }
+    spec:
+      containers:
+      - name: nginx
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        resources: {{ toYaml .Values.resources | nindent 10 }}
+        ports:
+        - containerPort: 80
+```
+
+## 14.6 Database secret pattern
+
+The Postgres password is rendered from values into a Secret. **Real prod would use external-secrets**, but for the lab the password is in values-*.yaml (and `.gitleaksignore` covers the textbook example).
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-db
+type: Opaque
+stringData:
+  POSTGRES_USER: {{ .Values.username }}
+  POSTGRES_PASSWORD: {{ .Values.password }}
+  POSTGRES_DB: {{ .Values.database }}
+```
+
+## 14.7 Installing via ArgoCD
+
+The ArgoCD Application points at this chart and a values file:
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: three-tier-dev
+  name: three-tier-prod
   namespace: argocd
 spec:
   source:
-    repoURL: https://github.com/myorg/myrepo.git
-    targetRevision: master
+    repoURL: https://github.com/gopalskhandale/azure-platform-lab
     path: kubernetes/apps/three-tier
     helm:
       valueFiles:
-        - values-dev.yaml
+      - values-prod.yaml
   destination:
+    namespace: app-prod
     server: https://kubernetes.default.svc
-    namespace: dev
   syncPolicy:
     automated:
-      prune: false
       selfHeal: true
 ```
 
-`automated.selfHeal: true` = ArgoCD reverts any drift between cluster and Git.
-`prune: false` = ArgoCD won't delete resources (safety).
+`kubectl get app -n argocd three-tier-prod` shows it Synced + Healthy when everything lines up.
 
-## 13.3 Jenkins
-
-### Why Jenkins (still)?
-
-- Mature, widely understood
-- Free, on-prem-friendly
-- Huge plugin ecosystem
-- Runs IN the cluster — direct kubeconfig access without exposing the API
-
-### Install Jenkins (Helm)
+## 14.8 Verifying end-to-end
 
 ```bash
-helm install jenkins jenkins/jenkins -n jenkins --create-namespace \
-  --values kubernetes/jenkins/values.yaml --wait
+# get the ingress IP
+kubectl get svc -n istio-system istio-ingressgateway
+
+# curl through it
+curl -H "Host: app.example.com" http://<EXTERNAL-IP>/
+# -> "Hello from PROD"
+
+curl -H "Host: app.example.com" http://<EXTERNAL-IP>/api/
+# -> backend response from prod
 ```
 
-Important values:
-```yaml
-controller:
-  resources:
-    requests:
-      cpu: 250m            # trimmed for small cluster
-      memory: 2Gi
-  persistence:
-    size: 8Gi
-    storageClass: managed-csi
-```
+## 14.9 What iteration 4 *doesn't* have
 
-### Kubernetes plugin for dynamic agents
+- No CI yet — image tags are set manually.
+- No blue/green — straight rolling updates.
+- No analysis gate — bad deploys go live immediately.
 
-Instead of pre-provisioned agents, Jenkins spins up a Pod per build. Pod includes containers for each tool:
-- `node` for tests/lint
-- `kaniko` for Docker builds
-- `helm` for deploys
-- `trivy` for scans
-
-```groovy
-pipeline {
-  agent {
-    kubernetes {
-      yaml '''
-      apiVersion: v1
-      kind: Pod
-      spec:
-        containers:
-          - name: node
-            image: node:20-alpine
-            command: [cat]
-            tty: true
-          - name: kaniko
-            image: gcr.io/kaniko-project/executor:debug
-            command: [cat]
-            tty: true
-      '''
-    }
-  }
-  stages {
-    stage('Test') {
-      steps {
-        container('node') {
-          sh 'npm ci && npm test'
-        }
-      }
-    }
-    stage('Build') {
-      steps {
-        container('kaniko') {
-          sh '/kaniko/executor --context=. --destination=myacr.azurecr.io/myapp:1.0'
-        }
-      }
-    }
-  }
-}
-```
-
-After iter 3: three platform tools running.
+That all lands in iterations 5 and 6.
 
 ---
 
-# Chapter 14: Iteration 4 — Three-Tier App
-
-## 14.1 The umbrella chart
-
-```
-kubernetes/apps/three-tier/
-├── Chart.yaml             # umbrella, depends on subcharts
-├── values.yaml            # defaults
-├── values-dev.yaml        # dev overrides
-├── values-prod.yaml       # prod overrides
-├── charts/
-│   ├── frontend/
-│   │   ├── Chart.yaml
-│   │   ├── values.yaml
-│   │   └── templates/
-│   │       ├── deployment.yaml
-│   │       └── service.yaml
-│   ├── backend/
-│   └── database/
-└── istio/
-    ├── gateway.yaml
-    ├── virtualservice-dev.yaml
-    └── virtualservice-prod.yaml
-```
-
-## 14.2 Frontend subchart
-
-```yaml
-# charts/frontend/templates/deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: frontend
-spec:
-  replicas: {{ .Values.replicaCount }}
-  selector:
-    matchLabels:
-      app: frontend
-  template:
-    metadata:
-      labels:
-        app: frontend
-      annotations:
-        sidecar.istio.io/proxyCPU: "10m"
-    spec:
-      containers:
-        - name: nginx
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          ports:
-            - containerPort: 80
-          {{- if .Values.useConfigMapHTML }}
-          volumeMounts:
-            - name: html
-              mountPath: /usr/share/nginx/html
-          {{- end }}
-          resources:
-            {{- toYaml .Values.resources | nindent 12 }}
-      {{- if .Values.useConfigMapHTML }}
-      volumes:
-        - name: html
-          configMap:
-            name: frontend-html
-      {{- end }}
-```
-
-`useConfigMapHTML` toggle lets us switch between placeholder mode (nginx serving HTML from ConfigMap) and real-image mode (vite-built React app).
-
-## 14.3 Database subchart (StatefulSet)
-
-```yaml
-# charts/database/templates/statefulset.yaml
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: database
-spec:
-  serviceName: database
-  replicas: 1
-  selector:
-    matchLabels:
-      app: database
-  template:
-    metadata:
-      labels:
-        app: database
-      annotations:
-        sidecar.istio.io/inject: "false"   # opt out of mTLS for stateful pod
-    spec:
-      containers:
-        - name: postgres
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          env:
-            - name: POSTGRES_DB
-              value: {{ .Values.database }}
-            - name: POSTGRES_USER
-              value: {{ .Values.username }}
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: database-credentials
-                  key: password
-          volumeMounts:
-            - name: data
-              mountPath: /var/lib/postgresql/data
-  volumeClaimTemplates:
-    - metadata:
-        name: data
-      spec:
-        accessModes: [ReadWriteOnce]
-        storageClassName: {{ .Values.storage.storageClass }}
-        resources:
-          requests:
-            storage: {{ .Values.storage.size }}
-```
-
-`volumeClaimTemplates` creates a separate PVC per Pod ordinal. `database-0` gets `data-database-0`.
-
-## 14.4 Deploy
-
-```bash
-# Create namespaces with istio-injection labels
-kubectl apply -f kubernetes/apps/namespaces/dev.yaml
-kubectl apply -f kubernetes/apps/namespaces/prod.yaml
-
-# Apply Istio Gateway
-kubectl apply -f kubernetes/apps/three-tier/istio/gateway.yaml
-
-# Deploy app
-cd kubernetes/apps/three-tier
-helm dependency update
-helm upgrade --install three-tier . -n dev  --values values-dev.yaml  --wait
-helm upgrade --install three-tier . -n prod --values values-prod.yaml --wait
-
-# Apply VirtualServices
-kubectl apply -f istio/virtualservice-dev.yaml
-kubectl apply -f istio/virtualservice-prod.yaml
-```
-
-## 14.5 Test via port-forward
-
-```bash
-# Forward istio-ingress
-kubectl port-forward -n istio-system svc/istio-ingress 9999:80 &
-
-# Hit with Host header
-curl -H "Host: dev.gskplat.local" http://localhost:9999/
-curl -H "Host: prod.gskplat.local" http://localhost:9999/
-```
-
-Different greetings per env confirm namespace routing works.
-
----
 
 # Chapter 15: Iteration 5 — Real Code + Jenkins Pipeline
 
-## 15.1 Backend app (Node + Express)
+## 15.1 Goal
 
-```javascript
-// apps/backend/server.js
-const express = require('express');
-const app = express();
+Wire a real CI pipeline. Build the frontend and backend images with **kaniko** (in-cluster, no Docker socket), push to ACR, run tests, scan with Trivy, update Helm values, and let ArgoCD apply.
 
-app.get('/health', (req, res) => res.status(200).send('ok'));
+## 15.2 Why kaniko
 
-app.get('/api/info', (req, res) => {
-  res.json({
-    env: process.env.APP_ENV || 'unknown',
-    version: process.env.APP_VERSION || 'unknown',
-    namespace: process.env.POD_NAMESPACE,
-    pod: process.env.HOSTNAME,
-    timestamp: new Date().toISOString()
-  });
-});
+The cluster doesn't have Docker available to pods, and we don't want to mount the host Docker socket (security hole). **Kaniko builds container images inside a container** using userspace tooling — no daemon needed.
 
-const PORT = process.env.PORT || 5678;
-app.listen(PORT, () => console.log(`Listening on ${PORT}`));
+```
++-------------+    +---------+    +-----+
+| Jenkins pod |--> | kaniko  |--> | ACR |
+| (orchestr.) |    | builds  |    |     |
++-------------+    | + pushes|    +-----+
+                   +---------+
 ```
 
-```javascript
-// apps/backend/server.test.js
-const request = require('supertest');
-const app = require('./server');
-
-describe('backend', () => {
-  it('GET /health returns 200', async () => {
-    const res = await request(app).get('/health');
-    expect(res.statusCode).toBe(200);
-  });
-});
-```
-
-## 15.2 Backend Dockerfile
-
-```dockerfile
-FROM node:20-alpine3.22 AS deps
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund
-
-FROM node:20-alpine3.22 AS runtime
-WORKDIR /app
-USER node
-COPY --chown=node:node --from=deps /app/node_modules ./node_modules
-COPY --chown=node:node server.js ./
-
-ENV NODE_ENV=production
-ENV PORT=5678
-EXPOSE 5678
-
-CMD ["node", "server.js"]
-```
-
-## 15.3 Jenkinsfile — multi-container pipeline
+## 15.3 The Jenkinsfile shape
 
 ```groovy
 pipeline {
@@ -3045,712 +4106,401 @@ kind: Pod
 spec:
   serviceAccountName: jenkins
   containers:
-    - name: node-backend
-      image: node:20-alpine3.22
-      command: [cat]
-      tty: true
-    - name: kaniko-backend
-      image: gcr.io/kaniko-project/executor:debug
-      command: [cat]
-      tty: true
-      volumeMounts:
-        - name: docker-config
-          mountPath: /kaniko/.docker
-    - name: helm
-      image: alpine/k8s:1.30.6
-      command: [cat]
-      tty: true
-    - name: trivy
-      image: aquasec/trivy:0.58.0
-      command: [cat]
-      tty: true
-    - name: gitleaks
-      image: zricethezav/gitleaks:v8.21.0
-      command: [cat]
-      tty: true
-  volumes:
+  - name: jnlp
+    image: jenkins/inbound-agent:latest
+  - name: kaniko-backend
+    image: gcr.io/kaniko-project/executor:latest
+    command: [sleep]
+    args: [99999]
+    volumeMounts:
     - name: docker-config
-      secret:
-        secretName: acr-docker-config
-        items:
-          - key: .dockerconfigjson
-            path: config.json
+      mountPath: /kaniko/.docker
+  - name: kaniko-frontend
+    image: gcr.io/kaniko-project/executor:latest
+    command: [sleep]
+    args: [99999]
+    volumeMounts:
+    - name: docker-config
+      mountPath: /kaniko/.docker
+  - name: tools
+    image: alpine/k8s:1.29.0
+    command: [sleep]
+    args: [99999]
+  volumes:
+  - name: docker-config
+    secret:
+      secretName: acr-docker-config
+      items:
+      - key: .dockerconfigjson
+        path: config.json
 '''
     }
   }
-
   environment {
-    ACR = 'gskplatacrn73d5y.azurecr.io'
-    IMAGE = "${ACR}/three-tier/backend"
-    TAG = "build-${env.BUILD_NUMBER}"
+    SHA = sh(returnStdout: true, script: "git rev-parse --short=7 HEAD").trim()
   }
-
   stages {
-    stage('CI checks') {
+    stage('Build images') {
       parallel {
-        stage('Backend tests + lint') {
+        stage('backend') {
           steps {
-            container('node-backend') {
-              dir('apps/backend') {
-                sh 'npm ci && npm test && npm run lint'
-              }
+            container('kaniko-backend') {
+              sh '''
+                /kaniko/executor \
+                  --context apps/backend \
+                  --destination $ACR/three-tier/backend:sha-$SHA \
+                  --cache=true --cache-repo=$ACR/cache/backend
+              '''
             }
           }
         }
-        stage('Secret scan') {
+        stage('frontend') {
           steps {
-            container('gitleaks') {
-              sh 'gitleaks detect --source=. --no-banner'
+            container('kaniko-frontend') {
+              sh '''
+                /kaniko/executor \
+                  --context apps/frontend \
+                  --destination $ACR/three-tier/frontend:sha-$SHA \
+                  --cache=true --cache-repo=$ACR/cache/frontend
+              '''
             }
           }
         }
       }
     }
-
-    stage('Build backend image') {
+    stage('Scan') {
       steps {
-        container('kaniko-backend') {
-          sh """
-            /kaniko/executor \\
-              --context=\$(pwd)/apps/backend \\
-              --destination=${IMAGE}:${TAG} \\
-              --destination=${IMAGE}:latest \\
-              --cache=true --cache-repo=${ACR}/cache
-          """
+        container('tools') {
+          sh 'trivy image --exit-code 0 $ACR/three-tier/backend:sha-$SHA'
         }
       }
     }
-
-    stage('Trivy scan') {
+    stage('Update Helm values') {
       steps {
-        container('trivy') {
-          sh "trivy image --severity HIGH,CRITICAL --ignore-unfixed ${IMAGE}:${TAG} || true"
-        }
-      }
-    }
-
-    stage('Deploy dev') {
-      steps {
-        container('helm') {
-          sh """
-            helm upgrade --install three-tier kubernetes/apps/three-tier \\
-              --namespace dev \\
-              --values kubernetes/apps/three-tier/values-dev.yaml \\
-              --set backend.image.repository=${IMAGE} \\
-              --set backend.image.tag=${TAG} \\
-              --set backend.useEchoArgs=false \\
-              --wait --timeout 5m
-          """
-        }
-      }
-    }
-
-    stage('E2E tests on dev') {
-      steps {
-        container('helm') {
+        container('tools') {
           sh '''
-            kubectl run e2e-${BUILD_NUMBER} --rm -i --restart=Never -n dev \\
-              --image=curlimages/curl --command -- \\
-              curl -fsS http://backend.dev.svc.cluster.local:5678/health
+            sed -i "s|tag: .*|tag: sha-$SHA|" \
+              kubernetes/apps/three-tier/values-dev.yaml
+            git commit -am "ci(dev): bump images to sha-$SHA"
+            git push origin master
           '''
         }
       }
-    }
-
-    stage('Approve prod') {
-      steps {
-        timeout(time: 5, unit: 'MINUTES') {
-          input message: 'Promote to prod?', ok: 'Promote'
-        }
-      }
-    }
-
-    stage('Deploy prod') {
-      // ... same as dev with prod values ...
     }
   }
 }
 ```
 
-## 15.4 What this pipeline does
+## 15.4 Gotchas we hit
+
+- **`timestamps()`** required a plugin we didn't have. Removed it.
+- **kaniko `--cleanup`** caused the container to exit after build, breaking the parallel stages. Removed it.
+- **Single kaniko container** with two builds shared state badly. **Split into kaniko-backend and kaniko-frontend.**
+- **ACR Docker config** had to be a Secret with `.dockerconfigjson`, mounted into `/kaniko/.docker/config.json`. Kaniko expects exactly that path.
+
+## 15.5 Why a Git SHA tag and not `latest`
+
+| Tag | Immutable? | Promotable? | Reproducible? |
+|---|---|---|---|
+| `latest` | no | no | no |
+| `v1.0.0` | usually | yes | yes |
+| `sha-9b61859` | **yes** | **yes** | **yes** |
+
+Git SHA is the perfect immutable image tag. It also lets us **promote the same image** from dev to prod by reusing the SHA — no rebuild between environments.
+
+## 15.6 Manual trigger or every commit?
+
+We chose **manual trigger** (`workflow_dispatch` in GHA, "Build Now" in Jenkins). Reasons:
+
+- Lab usage. We don't want every README typo to spin up kaniko.
+- Easier to demo. Click button, watch pipeline.
+- Production would obviously be on push, with PR gates.
+
+## 15.7 The end-to-end flow
 
 ```
-1. Spins up an agent Pod with 5 tool containers
-2. Runs tests + lint + secret scan in parallel
-3. kaniko builds the image (no Docker daemon needed) and pushes to ACR
-4. trivy scans for CVEs (report mode)
-5. helm upgrades the dev environment
-6. E2E test hits /health
-7. Waits for human approval
-8. helm upgrades prod
+1. dev pushes to master
+2. dev clicks "Build" in Jenkins
+3. Jenkins pipeline:
+   a. computes SHA
+   b. builds backend + frontend with kaniko in parallel
+   c. pushes to ACR
+   d. scans with Trivy (report only)
+   e. edits values-dev.yaml: tag -> sha-XXX
+   f. commits + pushes to master
+4. ArgoCD notices the commit (within 3 min auto-poll, or webhook)
+5. ArgoCD re-renders helm, applies to cluster
+6. Pods restart with new image
 ```
 
-## 15.5 The ACR secret
+## 15.8 What we still don't have
 
-kaniko needs ACR creds. Create a docker-registry secret:
+- Blue/green strategy.
+- A "promote dev to prod" step.
+- A second CI to prove this is portable.
 
-```bash
-kubectl create secret docker-registry acr-docker-config \
-  --namespace jenkins \
-  --docker-server=gskplatacrn73d5y.azurecr.io \
-  --docker-username="$ARM_CLIENT_ID" \
-  --docker-password="$ARM_CLIENT_SECRET"
-```
-
-This Secret is mounted into the kaniko container at `/kaniko/.docker/config.json`. kaniko auto-uses it for push.
-
-## 15.6 ArgoCD applications (drift detection)
-
-```yaml
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: three-tier-dev
-  namespace: argocd
-spec:
-  source:
-    repoURL: https://github.com/myorg/myrepo.git
-    targetRevision: master
-    path: kubernetes/apps/three-tier
-    helm:
-      valueFiles: [values-dev.yaml]
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: dev
-  syncPolicy:
-    # NO automated block — drift-only
-    syncOptions: [CreateNamespace=false]
-```
-
-Why drift-only in iter 5? Because Jenkins is the deployer. After every Jenkins deploy, ArgoCD reports `OutOfSync` because the image tag in cluster differs from Git. That's the signal.
-
-In iter 6 we switch ArgoCD to auto-sync and have CI write image tags to Git → ArgoCD picks them up. True GitOps.
+Iteration 6 brings the first two. Iteration 7 brings the third.
 
 ---
 
-# Chapter 16: Iteration 6 — GitHub Actions + Argo Rollouts + Prometheus
+# Chapter 16: Iteration 6 — GitHub Actions + Argo Rollouts + Prometheus Gate
 
-This is where the lab becomes production-grade. Three new components: GitHub Actions as alternative CI, Argo Rollouts for blue/green, Prometheus for analysis gates.
+## 16.1 Goal
 
-## 16.1 Argo Rollouts
+Three things in this iteration:
 
-### What it is
+1. **A second CI** (GitHub Actions) to prove the build-and-commit pattern is portable.
+2. **Argo Rollouts blue/green** strategy on the frontend and backend.
+3. **A Prometheus-based pre-promotion gate** that auto-fails bad deploys.
 
-A Kubernetes controller that replaces `Deployment` with a `Rollout` CRD. `Rollout` knows how to do:
-- **Blue/Green** — two ReplicaSets, swap at once
-- **Canary** — gradually shift traffic
-- **Analysis** — query metrics before promoting
+## 16.2 GitHub Actions pipeline
 
+```yaml
+# .github/workflows/ci-cd.yaml (skeleton)
+name: ci-cd
+on:
+  workflow_dispatch:        # manual trigger
+
+permissions:
+  contents: write           # so GITHUB_TOKEN can push values changes
+
+jobs:
+  resolve-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.s.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: s
+        run: echo "sha=sha-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+
+  build-backend:
+    needs: resolve-tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: image=moby/buildkit:latest
+      - run: docker buildx inspect --bootstrap   # containerd-snapshotter
+      - uses: azure/docker-login@v1
+        with:
+          login-server: ${{ secrets.ACR }}
+          username: ${{ secrets.ACR_USER }}
+          password: ${{ secrets.ACR_PASS }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: apps/backend
+          push: true
+          tags: ${{ secrets.ACR }}/three-tier/backend:${{ needs.resolve-tag.outputs.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+
+  update-dev-tags:
+    needs: [build-backend, build-frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - run: |
+          pip install pyyaml
+          python - <<'PY'
+          import yaml, pathlib
+          tag = "${{ needs.resolve-tag.outputs.sha }}"
+          f = pathlib.Path("kubernetes/apps/three-tier/values-dev.yaml")
+          y = yaml.safe_load(f.read_text())
+          y["frontend"]["image"]["tag"] = tag
+          y["backend"]["image"]["tag"]  = tag
+          f.write_text(yaml.safe_dump(y))
+          PY
+      - run: |
+          git config user.name  "github-actions"
+          git config user.email "actions@github.com"
+          git commit -am "ci(dev): bump images to ${{ needs.resolve-tag.outputs.sha }} [skip ci]"
+          git push
+
+  approve-prod:
+    needs: update-dev-tags
+    runs-on: ubuntu-latest
+    environment: prod-approval    # GitHub Environments adds a manual gate
+    steps:
+      - run: echo "approved"
+
+  update-prod-tags:
+    needs: approve-prod
+    runs-on: ubuntu-latest
+    # ... same as update-dev-tags but on values-prod.yaml ...
 ```
-Deployment:                  Rollout (blue/green):
-  ┌──────────┐                ┌──────────────────┐
-  │ Update   │                │ Update           │
-  │  ↓       │                │  ↓               │
-  │ Rolling  │                │ Create green     │
-  │ replace  │                │  alongside blue  │
-  │ pod by   │                │  ↓               │
-  │ pod      │                │ [Pause? Analyze?]│
-  └──────────┘                │  ↓               │
-                              │ Promote: switch  │
-                              │  active Service  │
-                              │  to green        │
-                              │  ↓               │
-                              │ Scale down blue  │
-                              │  after 30s       │
-                              └──────────────────┘
-```
 
-### Install
+### Things we hit and fixed
 
-```bash
-kubectl create namespace argo-rollouts
-kubectl apply -n argo-rollouts -f https://github.com/argoproj/argo-rollouts/releases/latest/download/install.yaml
+- **Buildx "Cache export is not supported for the docker driver."** Fix: enable the containerd image store on the runner (`containerd-snapshotter`) so the standard docker driver supports caching.
+- **PAT vs GITHUB_TOKEN.** Started with a PAT, switched to `GITHUB_TOKEN` + `permissions: contents: write`. Simpler, no rotation.
+- **Trivy CVEs.** alpine images have known CVEs that can't be patched without breaking the image. We moved Trivy to **report-only** (`exit-code: "0"`). Documented as a known gap.
 
-# CLI plugin (run on your VM)
-curl -LO https://github.com/argoproj/argo-rollouts/releases/latest/download/kubectl-argo-rollouts-linux-amd64
-chmod +x kubectl-argo-rollouts-linux-amd64
-sudo mv kubectl-argo-rollouts-linux-amd64 /usr/local/bin/kubectl-argo-rollouts
-```
+## 16.3 Argo Rollouts blue/green
 
-### Rollout spec
+The frontend Rollout (formerly Deployment):
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata:
-  name: frontend
+  name: {{ .Release.Name }}-frontend
 spec:
-  replicas: 1
+  replicas: {{ .Values.replicaCount }}
   strategy:
     blueGreen:
-      activeService: frontend            # serves live traffic
-      previewService: frontend-preview   # serves test traffic for green
-      autoPromotionEnabled: false        # manual gate
-      scaleDownDelaySeconds: 30          # keep blue around for instant rollback
+      activeService: {{ .Release.Name }}-frontend-active
+      previewService: {{ .Release.Name }}-frontend-preview
+      autoPromotionEnabled: {{ .Values.blueGreen.autoPromotionEnabled }}
+      scaleDownDelaySeconds: 30
       prePromotionAnalysis:
         templates:
-          - templateName: frontend-success-rate
-        args:
-          - name: service-name
-            value: frontend-preview
+        - templateName: frontend-success-rate
   selector:
-    matchLabels:
-      app: frontend
-  template:
-    metadata:
-      labels:
-        app: frontend
-    spec:
-      containers:
-        - name: nginx
-          image: myacr.azurecr.io/frontend:sha-abc123
+    matchLabels: { app: frontend }
+  template: { ... }
 ```
 
-The Rollout creates two Services:
-- `frontend` — active, points to live ReplicaSet
-- `frontend-preview` — preview, points to new ReplicaSet during a deploy
-
-### Commands
-
-```bash
-# View
-kubectl argo rollouts get rollout frontend -n dev
-kubectl argo rollouts get rollout frontend -n dev --watch     # live updates
-
-# Control
-kubectl argo rollouts promote frontend -n dev                 # green → active
-kubectl argo rollouts abort frontend -n dev                   # kill green, keep blue
-kubectl argo rollouts undo frontend -n dev                    # instant rollback
-kubectl argo rollouts retry rollout frontend -n dev           # retry aborted
-
-# Open the dashboard
-kubectl argo rollouts dashboard --port 3100
-```
-
-## 16.2 Prometheus
-
-### What it is
-
-Time-series database for metrics. Pulls (scrapes) metrics from configured endpoints.
+### What "blue/green" means here
 
 ```
-┌─────────────┐  scrape   ┌──────────────────────┐
-│ App pod     │◄──────────┤ Prometheus           │
-│ /metrics    │  every 15s│  (stores time series)│
-└─────────────┘           │                      │
-                          │  query via PromQL    │
-┌─────────────┐  scrape   │                      │
-│ istio-proxy │◄──────────┤                      │
-│ /stats/prom │           │                      │
-└─────────────┘           └──────────┬───────────┘
-                                     │
-                                     ▼
-                          ┌──────────────────────┐
-                          │ Grafana dashboards   │
-                          │ AnalysisTemplate     │
-                          │ Alertmanager         │
-                          └──────────────────────┘
+Before deploy:
++--------+ active -> v1 (blue)
+|  user  |--------------------+
++--------+                    |
+                              v
+                       +--------------+
+                       | v1 pods (4)  |
+                       +--------------+
+
+Mid-deploy (analysis running):
++--------+ active  -> v1 (blue)
+|  user  |--------------------+
++--------+                    v
+                       +--------------+
+                       | v1 pods (4)  |  <-- still serving traffic
+                       +--------------+
+                       +--------------+
+                       | v2 pods (4)  |  <-- new, being analyzed
+                       +--------------+
+                       ^
+                       | preview svc routes here for analysis
+
+If analysis passes:
+   - active svc switches to v2
+   - v1 stays up for scaleDownDelaySeconds (30s) for fast rollback
+   - then v1 scales down
+
+If analysis fails:
+   - active svc never switches
+   - v2 pods scale down
+   - rollout marked Degraded
 ```
 
-### Install via kube-prometheus-stack
-
-```bash
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm install prometheus prometheus-community/kube-prometheus-stack \
-  --namespace monitoring --create-namespace \
-  --set grafana.adminPassword=admin \
-  --wait
-```
-
-This installs:
-- Prometheus + operator
-- Grafana
-- node-exporter (node metrics)
-- kube-state-metrics (Kubernetes object metrics)
-
-### PodMonitor (CRD that creates scrape config)
-
-```yaml
-apiVersion: monitoring.coreos.com/v1
-kind: PodMonitor
-metadata:
-  name: envoy-stats-monitor
-  namespace: monitoring
-  labels:
-    release: prometheus            # match prometheus operator's labelSelector
-spec:
-  selector:
-    matchExpressions:
-      - { key: istio-prometheus-ignore, operator: DoesNotExist }
-  namespaceSelector:
-    any: true
-  podMetricsEndpoints:
-    - path: /stats/prometheus
-      port: http-envoy-prom
-      interval: 15s
-      relabelings:
-        - sourceLabels: [__meta_kubernetes_pod_container_name]
-          action: keep
-          regex: "istio-proxy"
-```
-
-Now Prometheus scrapes every istio-proxy sidecar. `istio_requests_total` shows up.
-
-### PromQL basics
-
-```promql
-# Total requests in last 5 minutes
-sum(rate(istio_requests_total[5m]))
-
-# Group by service
-sum by (destination_service_name) (rate(istio_requests_total[5m]))
-
-# Success rate
-sum(rate(istio_requests_total{response_code!~"5.."}[2m]))
-  /
-sum(rate(istio_requests_total[2m]))
-
-# 99th percentile latency
-histogram_quantile(0.99, sum(rate(istio_request_duration_milliseconds_bucket[5m])) by (le))
-```
-
-## 16.3 AnalysisTemplate
-
-Now we can wire Prometheus to Argo Rollouts:
+## 16.4 AnalysisTemplate — the gate
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
 kind: AnalysisTemplate
 metadata:
   name: frontend-success-rate
-  namespace: dev
 spec:
-  args:
-    - name: service-name
   metrics:
-    # Gate 1: at least 1 req/sec on preview
-    - name: min-traffic
-      successCondition: result[0] >= 1
-      failureLimit: 3
-      interval: 30s
-      count: 3
-      provider:
-        prometheus:
-          address: http://prometheus-kube-prometheus-prometheus.monitoring.svc:9090
-          query: |
-            sum(rate(istio_requests_total{
-              reporter="destination",
-              destination_service_name="{{args.service-name}}"
-            }[1m]))
-            or vector(0)
-
-    # Gate 2: success rate >= 95%
-    - name: success-rate
-      successCondition: result[0] >= 0.95
-      failureLimit: 3
-      interval: 30s
-      count: 3
-      provider:
-        prometheus:
-          address: http://prometheus-kube-prometheus-prometheus.monitoring.svc:9090
-          query: |
-            (
-              sum(rate(istio_requests_total{
-                reporter="destination",
-                destination_service_name="{{args.service-name}}",
-                response_code!~"5.."
-              }[2m]))
-              /
-              sum(rate(istio_requests_total{
-                reporter="destination",
-                destination_service_name="{{args.service-name}}"
-              }[2m]))
-            )
-            or vector(1)
+  - name: min-traffic
+    successCondition: result >= 1
+    provider:
+      prometheus:
+        address: http://kps-prometheus.monitoring.svc:9090
+        query: |
+          sum(rate(istio_requests_total{
+            destination_workload="three-tier-prod-frontend",
+            reporter="destination"
+          }[1m])) or vector(0)
+  - name: success-rate
+    successCondition: result >= 0.95
+    provider:
+      prometheus:
+        address: http://kps-prometheus.monitoring.svc:9090
+        query: |
+          sum(rate(istio_requests_total{
+            destination_workload="three-tier-prod-frontend",
+            response_code!~"5..",
+            reporter="destination"
+          }[1m]))
+          /
+          sum(rate(istio_requests_total{
+            destination_workload="three-tier-prod-frontend",
+            reporter="destination"
+          }[1m])) or vector(1)
 ```
 
-### Two-gate analysis explained
+### Why two metrics
 
-Both gates must pass. If either fails 3 times in a row, the rollout aborts.
+- **`success-rate` alone** passes trivially at zero traffic. Bad deploy + no traffic = false green.
+- **`min-traffic` gate** requires ≥1 req/sec before we trust the success rate.
+- **`or vector(1)` / `or vector(0)`** keeps Prometheus from returning an empty vector (which crashes the analysis controller with "slice index out of range").
 
-**Why min-traffic?** Without it, the Prometheus query for success rate returns empty `result[]` for a zero-traffic preview Service. Then `result[0]` crashes the analyzer with `reflect: slice index out of range`. We add `or vector(1)` to handle empty — but that makes zero-traffic = 100% success = false positive.
+Both metrics must pass for the rollout to promote.
 
-`min-traffic` gate forces traffic to flow before success-rate analysis runs. Without traffic, the gate fails, rollout aborts.
-
-### Flow
-
-```
-Argo Rollouts creates green ReplicaSet
-       │
-       ▼
-Pre-promotion analysis fires
-       │
-       ├──► Query min-traffic (1 req/sec on preview Service)
-       │
-       │   ├─ Operator/CI must drive traffic to frontend-preview
-       │   │
-       │   ▼
-       │   Pass (3× check)? continue
-       │   Fail (3× check)? abort
-       │
-       ▼
-       Query success-rate (% non-5xx)
-       │
-       ▼
-       Pass (3× check)? continue
-       Fail (3× check)? abort
-       │
-       ▼
-Rollout pauses at BlueGreenPause
-       │
-       ▼
-Auto-promote (if autoPromotionEnabled: true)
-OR
-Manual: kubectl argo rollouts promote
-       │
-       ▼
-Switch active Service to green ReplicaSet
-       │
-       ▼
-After scaleDownDelaySeconds=30, blue is scaled down
-```
-
-## 16.4 GitHub Actions workflow
+## 16.5 Auto-promote dev, manual-promote prod
 
 ```yaml
-name: Three-Tier CI/CD
+# values-dev.yaml
+blueGreen:
+  autoPromotionEnabled: true    # fast feedback in dev
 
-on:
-  workflow_dispatch:    # manual trigger only
-    inputs:
-      deploy_env:
-        type: choice
-        options: [dev, prod]
-
-permissions:
-  contents: write       # so GITHUB_TOKEN can push commits
-
-env:
-  ACR_LOGIN_SERVER: myacr.azurecr.io
-  BACKEND_IMAGE: myacr.azurecr.io/three-tier/backend
-  FRONTEND_IMAGE: myacr.azurecr.io/three-tier/frontend
-  CHART_PATH: kubernetes/apps/three-tier
-
-jobs:
-  # 1. Compute git SHA tag — done ONCE, shared with all jobs
-  resolve-tag:
-    runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.tag.outputs.tag }}
-    steps:
-      - uses: actions/checkout@v4
-      - id: tag
-        run: echo "tag=sha-$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
-
-  # 2. CI checks — parallel
-  backend-ci:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: apps/backend/package-lock.json
-      - run: npm ci && npm test && npm run lint
-        working-directory: apps/backend
-
-  # ... frontend-ci, secret-scan ...
-
-  # 3. Build images — uses SAME tag
-  build-backend:
-    needs: [backend-ci, secret-scan, resolve-tag]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Enable containerd image store
-        run: |
-          echo '{"features": {"containerd-snapshotter": true}}' | sudo tee /etc/docker/daemon.json
-          sudo systemctl restart docker
-      - uses: azure/docker-login@v2
-        with:
-          login-server: ${{ env.ACR_LOGIN_SERVER }}
-          username: ${{ secrets.ACR_CLIENT_ID }}
-          password: ${{ secrets.ACR_CLIENT_SECRET }}
-      - uses: docker/build-push-action@v6
-        with:
-          context: apps/backend
-          push: true
-          tags: |
-            ${{ env.BACKEND_IMAGE }}:${{ needs.resolve-tag.outputs.tag }}
-            ${{ env.BACKEND_IMAGE }}:latest
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,scope=backend,mode=max
-
-  # 4. Trivy scan
-  trivy-scan:
-    needs: [build-backend, build-frontend, resolve-tag]
-    strategy:
-      matrix:
-        image: [backend, frontend]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.ACR_LOGIN_SERVER }}/three-tier/${{ matrix.image }}:${{ needs.resolve-tag.outputs.tag }}
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: "0"     # report only
-      - uses: actions/upload-artifact@v4
-        with:
-          name: trivy-${{ matrix.image }}-report
-          path: trivy-${{ matrix.image }}.txt
-
-  # 5. Commit dev image tag to Git
-  update-dev-tags:
-    needs: [trivy-scan, resolve-tag]
-    environment: dev
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Update values-dev.yaml
-        env:
-          IMAGE_TAG: ${{ needs.resolve-tag.outputs.tag }}
-        run: |
-          python3 -c "
-          import os, yaml
-          tag = os.environ['IMAGE_TAG']
-          f = '${{ env.CHART_PATH }}/values-dev.yaml'
-          with open(f) as fp: v = yaml.safe_load(fp)
-          v['frontend']['image']['tag'] = tag
-          v['backend']['image']['tag'] = tag
-          v['backend']['env']['APP_VERSION'] = tag
-          with open(f, 'w') as fp: yaml.safe_dump(v, fp, default_flow_style=False, sort_keys=False)
-          "
-      - name: Commit and push
-        env:
-          IMAGE_TAG: ${{ needs.resolve-tag.outputs.tag }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add ${{ env.CHART_PATH }}/values-dev.yaml
-          git commit -m "ci(dev): bump images to ${IMAGE_TAG}" || echo "no changes"
-          git pull --rebase origin master
-          git push origin master
-
-  # 6. Manual gate for prod
-  approve-prod:
-    needs: [update-dev-tags]
-    environment: prod          # GitHub Environment with required reviewers
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "Approved for prod"
-
-  # 7. Commit prod tag — SAME SHA as dev
-  update-prod-tags:
-    needs: [approve-prod, resolve-tag]
-    runs-on: ubuntu-latest
-    # ... similar to update-dev-tags but values-prod.yaml ...
+# values-prod.yaml
+blueGreen:
+  autoPromotionEnabled: false   # human eyes before prod cutover
 ```
 
-## 16.5 What makes this production-grade
+In prod, after the analysis passes, the Rollout sits in "Paused" state. An operator runs:
 
-1. **Git SHA as image tag** — immutable, traceable to commit
-2. **Image promotion** — same SHA flows dev → prod (build once, deploy many)
-3. **Auto-promote in dev** — fast developer feedback
-4. **Manual gate in prod** — GitHub Environment with required reviewers
-5. **No kubeconfig in CI** — CI just commits to Git, ArgoCD applies
-6. **Min-traffic gate** — prevents false-positive promotions
-7. **Trivy report-only** — non-blocking but archived for audit
-8. **Concurrency** — parallel CI jobs save wallclock time
-
-## 16.6 The full flow visualized
-
+```bash
+kubectl argo rollouts promote three-tier-prod-frontend -n app-prod
 ```
-┌────────────────────────────────────────────────────────────┐
-│ Developer pushes commit (or manually triggers workflow)    │
-└────────────────────────┬───────────────────────────────────┘
-                         │
-                         ▼
-┌────────────────────────────────────────────────────────────┐
-│ GitHub Actions                                              │
-│  resolve-tag     → sha-abc1234                              │
-│  ├─ backend-ci ─┐                                           │
-│  ├─ frontend-ci ┼─ parallel ─► build-backend ─┐             │
-│  └─ secret-scan ┘              build-frontend ┤             │
-│                                trivy-scan ────┤             │
-│                                update-dev-tags◄┘            │
-│                                (commits sha-abc1234         │
-│                                 to values-dev.yaml,         │
-│                                 pushes to master)           │
-└────────────────────────┬───────────────────────────────────┘
-                         │
-                         ▼
-┌────────────────────────────────────────────────────────────┐
-│ ArgoCD detects new commit on master                         │
-│  applies updated Helm chart to dev namespace                │
-│  Rollout spec gets new image tag sha-abc1234                │
-└────────────────────────┬───────────────────────────────────┘
-                         │
-                         ▼
-┌────────────────────────────────────────────────────────────┐
-│ Argo Rollouts                                               │
-│  1. Creates green ReplicaSet with new image                 │
-│  2. Routes frontend-preview Service to green                │
-│  3. Runs prePromotionAnalysis                               │
-│     ├─ min-traffic gate (must see ≥1 req/s on green)        │
-│     └─ success-rate gate (≥95% non-5xx)                     │
-│  4. If pass: auto-promote (dev) or pause (prod)             │
-│     Active Service flips to green                           │
-│     Blue scaled down after 30s grace period                 │
-│  5. If fail: auto-abort                                     │
-│     Green scaled to 0, blue keeps serving                   │
-└────────────────────────┬───────────────────────────────────┘
-                         │
-                         ▼
-┌────────────────────────────────────────────────────────────┐
-│ GitHub Actions resumes                                      │
-│  approve-prod (paused for reviewer click)                   │
-│   ↓ after approval                                          │
-│  update-prod-tags (commits SAME sha-abc1234 to values-prod) │
-│   ↓                                                         │
-│ ArgoCD syncs prod, same flow as dev but autoPromote=false   │
-│   ↓                                                         │
-│ Operator: kubectl argo rollouts promote frontend -n prod    │
-└────────────────────────────────────────────────────────────┘
-```
+
+…or clicks "Promote" in the Argo Rollouts dashboard.
+
+## 16.6 Triggering a failure on purpose (to verify the gate)
+
+1. Push a backend image that 500s on every request.
+2. CI bumps `values-prod.yaml` to the new tag.
+3. ArgoCD applies.
+4. Rollout starts. v2 pods come up.
+5. Analysis runs at 30s intervals. min-traffic is 0 → fails first run.
+6. After 3 failed checks, Rollout is `Degraded`. Active service never switches.
+7. v2 pods stay around (for rollback) but get no real traffic.
+
+This is the most satisfying part of the lab to demo.
+
+## 16.7 What iteration 6 *doesn't* have
+
+- Only two CIs. The portfolio story is "here's the GitOps pattern across N tools." We add CircleCI in iteration 7.
 
 ---
 
-# Chapter 17: Iteration 7 — CircleCI (the third CI for portfolio)
+# Chapter 17: Iteration 7 — CircleCI
 
-## 17.1 Why a third CI?
+## 17.1 Goal
 
-For a Platform Engineer interview, showing you can speak to multiple CI systems is valuable. Jenkins is old-school in-house, GitHub Actions is the modern GitHub-integrated option, CircleCI is the multi-tenant SaaS with strong orb ecosystem.
+A third CI system, on a cloud-hosted runner, with manual approval gates. Demonstrates that the GitOps pattern — build, commit values, let ArgoCD apply — is CI-tool-agnostic.
 
-## 17.2 CircleCI mental model
+## 17.2 CircleCI vocabulary in 60 seconds
 
-```
-Pipeline (triggered by Git push or manual)
-  └── Workflow (orchestrates jobs in a DAG)
-       └── Job (runs in an executor)
-            └── Steps (commands)
-```
-
-| CircleCI term | GitHub Actions equivalent |
+| CircleCI term | What it is |
 |---|---|
-| Pipeline | Workflow |
-| Workflow | Workflow |
-| Job | Job |
-| Executor | `runs-on:` runner |
-| Orb | Action |
-| Context | Environment |
-| Step | Step |
+| **Orb** | A reusable, packaged set of commands/jobs (like Helm chart for CI) |
+| **Context** | A named bag of environment variables/secrets, scoped at the org |
+| **Workflow** | An ordered/branching set of jobs |
+| **Approval job** | `type: approval` — pauses the workflow until a human clicks |
+| **Workspace** | Files/data passed between jobs via `persist_to_workspace` / `attach_workspace` |
+| **Executor** | Where the job runs: docker / machine / macos |
 
-## 17.3 CircleCI configuration
+## 17.3 The config
 
 ```yaml
 version: 2.1
@@ -3758,424 +4508,299 @@ version: 2.1
 orbs:
   node: circleci/node@5.2.0
 
-parameters:
-  deploy_env:
-    type: enum
-    enum: ["dev", "prod"]
-    default: "dev"
-
-commands:
-  install_and_cache_npm:
-    parameters:
-      app_dir:
-        type: string
-    steps:
-      - restore_cache:
-          keys:
-            - v1-<< parameters.app_dir >>-deps-{{ checksum "apps/<< parameters.app_dir >>/package-lock.json" }}
-            - v1-<< parameters.app_dir >>-deps-
-      - run:
-          name: npm ci
-          working_directory: apps/<< parameters.app_dir >>
-          command: npm ci --no-audit --no-fund
-      - save_cache:
-          key: v1-<< parameters.app_dir >>-deps-{{ checksum "apps/<< parameters.app_dir >>/package-lock.json" }}
-          paths:
-            - apps/<< parameters.app_dir >>/node_modules
+executors:
+  default:
+    docker:
+      - image: cimg/base:current
 
 jobs:
   resolve-tag:
-    docker:
-      - image: cimg/base:current
+    executor: default
     steps:
       - checkout
       - run:
-          name: Compute short SHA
+          name: Compute SHA tag
           command: |
+            SHA=$(git rev-parse --short=7 HEAD)
             mkdir -p workspace
-            echo "sha-$(git rev-parse --short=7 HEAD)" > workspace/image_tag
+            printf "sha-%s" "$SHA" > workspace/image_tag
+            cat workspace/image_tag
       - persist_to_workspace:
           root: workspace
           paths: [image_tag]
 
-  backend-ci:
-    docker:
-      - image: cimg/node:20.10
-    steps:
-      - checkout
-      - install_and_cache_npm:
-          app_dir: backend
-      - run:
-          name: Test
-          working_directory: apps/backend
-          command: npm test
-      - run:
-          name: Lint
-          working_directory: apps/backend
-          command: npm run lint
-
-  build-image:
-    machine:
-      image: ubuntu-2204:current
+  build-and-push:
+    executor: default
     parameters:
-      app:
-        type: enum
-        enum: ["backend", "frontend"]
+      service:
+        type: string
     steps:
       - checkout
-      - attach_workspace:
-          at: workspace
+      - setup_remote_docker
+      - attach_workspace: { at: workspace }
       - run:
           name: Login to ACR
           command: |
-            AUTH=$(echo -n "$ACR_CLIENT_ID:$ACR_CLIENT_SECRET" | base64 -w0)
-            mkdir -p ~/.docker
-            printf '{"auths":{"%s":{"auth":"%s"}}}' "$ACR_LOGIN_SERVER" "$AUTH" > ~/.docker/config.json
+            echo "$ACR_PASSWORD" | docker login "$ACR_LOGIN_SERVER" \
+              -u "$ACR_USERNAME" --password-stdin
       - run:
-          name: Build and push
+          name: Build and push <<parameters.service>>
           command: |
-            IMAGE_TAG=$(cat workspace/image_tag)
-            IMAGE="$ACR_LOGIN_SERVER/three-tier/<< parameters.app >>"
-            docker build --tag "$IMAGE:$IMAGE_TAG" --tag "$IMAGE:latest" apps/<< parameters.app >>
-            docker push "$IMAGE:$IMAGE_TAG"
-            docker push "$IMAGE:latest"
+            TAG=$(cat workspace/image_tag)
+            docker build -t "$ACR_LOGIN_SERVER/three-tier/<<parameters.service>>:$TAG" \
+              apps/<<parameters.service>>
+            docker push "$ACR_LOGIN_SERVER/three-tier/<<parameters.service>>:$TAG"
 
-workflows:
-  ci-cd:
-    jobs:
-      - resolve-tag
-      - backend-ci
-      - frontend-ci
-      - secret-scan
-
-      - build-image:
-          name: build-backend
-          app: backend
-          context: azure-lab
-          requires: [backend-ci, secret-scan, resolve-tag]
-
-      - build-image:
-          name: build-frontend
-          app: frontend
-          context: azure-lab
-          requires: [frontend-ci, secret-scan, resolve-tag]
-
-      - hold-prod:
-          type: approval
-          requires: [update-dev-tags]
-
-      - update-prod-tags:
-          context: github-write
-          requires: [hold-prod]
-```
-
-## 17.4 CircleCI-specific concepts
-
-### Executors
-
-```yaml
-# Docker (default, fast)
-docker:
-  - image: cimg/node:20.10
-
-# Machine (full VM, supports Docker-in-Docker)
-machine:
-  image: ubuntu-2204:current
-
-# macOS (for iOS builds)
-macos:
-  xcode: "15.0.0"
-
-# Windows
-machine:
-  image: windows-server-2022-gui:current
-  resource_class: windows.medium
-```
-
-**Docker** executor can't run `docker build` natively. Use **machine** for Docker builds.
-
-### Orbs
-
-Versioned reusable packages:
-```yaml
-orbs:
-  node: circleci/node@5.2.0
-  aws-cli: circleci/aws-cli@4.0
-  kubernetes: circleci/kubernetes@1.3
-  helm: circleci/helm@2.0
-```
-
-Use them in jobs:
-```yaml
-jobs:
-  test:
-    executor: node/default
+  bump-values:
+    executor: default
+    parameters:
+      env_file:
+        type: string
     steps:
       - checkout
-      - node/install-packages
-      - run: npm test
-```
-
-### Contexts
-
-Org-level secrets (vs project-level env vars):
-```yaml
-jobs:
-  - deploy:
-      context: production-secrets   # imports env vars from Context
-```
-
-Contexts can have role-based access (only DevOps team can use prod-secrets context). Big advantage over GitHub Actions secrets which are repo-scoped.
-
-### Test parallelism
-
-```yaml
-jobs:
-  test:
-    parallelism: 4
-    steps:
+      - attach_workspace: { at: workspace }
       - run:
+          name: Update values
           command: |
-            TESTS=$(circleci tests glob "**/*.test.js" | circleci tests split --split-by=timings)
-            jest $TESTS
-```
+            pip install --quiet pyyaml
+            TAG=$(cat workspace/image_tag)
+            python3 -c "
+            import yaml, pathlib, os
+            tag = os.environ['TAG']
+            f = pathlib.Path('kubernetes/apps/three-tier/<<parameters.env_file>>')
+            y = yaml.safe_load(f.read_text())
+            y['frontend']['image']['tag'] = tag
+            y['backend']['image']['tag']  = tag
+            f.write_text(yaml.safe_dump(y))
+            "
+            git config user.name  "circleci"
+            git config user.email "ci@circleci.local"
+            git commit -am "ci(circleci): bump <<parameters.env_file>> to $TAG [skip ci]"
+            git push https://$GITHUB_TOKEN@github.com/gopalskhandale/azure-platform-lab master
 
-`circleci tests split --split-by=timings` distributes test files across 4 containers, balancing by historical run time. Much harder in GitHub Actions.
-
-### Workspaces (sharing files between jobs)
-
-```yaml
-- persist_to_workspace:
-    root: workspace
-    paths: [image_tag]
-
-# In a later job:
-- attach_workspace:
-    at: workspace
-- run: cat workspace/image_tag
-```
-
-Like GitHub Actions artifacts but faster (in-memory).
-
-### Manual approval
-
-```yaml
 workflows:
-  deploy:
+  build-test-deploy:
     jobs:
-      - test
-      - build:
-          requires: [test]
-      - hold-prod:
-          type: approval        # ← pauses, awaits human click
-          requires: [build]
-      - deploy-prod:
-          requires: [hold-prod]
+      - resolve-tag
+      - build-and-push:
+          name: build-backend
+          service: backend
+          context: azure-lab
+          requires: [resolve-tag]
+      - build-and-push:
+          name: build-frontend
+          service: frontend
+          context: azure-lab
+          requires: [resolve-tag]
+      - bump-values:
+          name: bump-dev
+          env_file: values-dev.yaml
+          context: github-write
+          requires: [build-backend, build-frontend]
+      - hold-for-prod:
+          type: approval
+          requires: [bump-dev]
+      - bump-values:
+          name: bump-prod
+          env_file: values-prod.yaml
+          context: github-write
+          requires: [hold-for-prod]
 ```
 
-`type: approval` job doesn't run anything — just pauses for a UI click.
+## 17.4 Contexts (where secrets live)
 
-## 17.5 CircleCI vs GitHub Actions comparison
+We define two Contexts in the CircleCI org settings:
 
-| Feature | GitHub Actions | CircleCI |
-|---|---|---|
-| Free tier | 2000 min/month (private) | 6000 min/month (Linux) |
-| Integration with GitHub | Native | Via app install |
-| Self-hosted runners | Yes | Yes (Server) |
-| Orb / Action ecosystem | Marketplace (huge) | Orb registry (curated) |
-| Approval gates | Environment reviewers | `type: approval` |
-| Test parallelism | Manual matrix | Native `circleci tests split` |
-| Secrets | Repo-scoped (or env) | Org Contexts with RBAC |
-| Docker layer caching | GHA cache `type=gha` | Premium DLC |
-| Windows/macOS | Yes (paid more) | Yes (paid more) |
-| Pricing | Per minute | Per credit (~per minute) |
+| Context | Variables |
+|---|---|
+| `azure-lab` | `ACR_LOGIN_SERVER`, `ACR_USERNAME`, `ACR_PASSWORD` |
+| `github-write` | `GITHUB_TOKEN` (a PAT with `repo:write`) |
 
-## 17.6 Common gotchas (heredoc, etc.)
+Each job lists the contexts it needs. Secrets are scoped: the build job has ACR creds but no git write; the bump job has git write but no ACR creds.
 
-CircleCI uses `<<` for parameter substitution. This conflicts with bash heredoc syntax:
+## 17.5 The approval gate
 
-```yaml
-# BAD — `<<` interpreted as CircleCI parameter
-run: |
-  cat > file <<EOF
-  content
-  EOF
+`hold-for-prod` is a `type: approval` job — no executor, no steps. The workflow pauses there. In the CircleCI UI you click "Approve" or "Cancel." Approve → `bump-prod` runs.
 
-# GOOD — use printf or escape
-run: |
-  printf 'content' > file
-```
+This mirrors GHA's `environment: prod-approval` and Jenkins' `input` step. Three different syntaxes, same concept.
 
-This bit our lab pipeline. The fix: replace heredocs with `printf` or single-command python.
+## 17.6 Gotchas we hit
+
+- **`<<EOF` heredoc.** CircleCI's YAML uses `<<` for parameter syntax — your shell heredoc collides. Replace with `printf` or `python3 -c "..."` strings.
+- **`ModuleNotFoundError: yaml`.** The `cimg/base` image doesn't ship pyyaml. `pip install --quiet pyyaml` in the step.
+- **Image tag as an output.** No `outputs` in CircleCI jobs. Use `persist_to_workspace` / `attach_workspace` instead.
+
+## 17.7 What you can demo
+
+- Manual trigger of the workflow from the CircleCI UI.
+- Approval gate before prod.
+- Same Git SHA flows from dev (auto) to prod (after approval).
+- The dev/prod bumps commit to the same repo ArgoCD watches.
+- Within minutes of the prod bump, ArgoCD reconciles and the Rollout's analysis runs.
+
+## 17.8 Cross-CI table
+
+| | Jenkins | GHA | CircleCI |
+|---|---|---|---|
+| Runs where | In-cluster | GitHub-hosted | CircleCI-hosted |
+| Build tool | kaniko | buildx | docker |
+| Secrets | k8s Secret | repo + env secrets | Contexts |
+| Approval | `input` step | Environment | `type: approval` |
+| Trigger | "Build Now" | `workflow_dispatch` | UI / API trigger |
+| Touches cluster | helm install / kubectl | Git commit only | Git commit only |
+
+Jenkins is the one that touches the cluster directly (it runs *in* the cluster, after all). The two cloud CIs only commit to Git. Both patterns work; the GitOps-only pattern is cleaner separation of concerns.
+
+## 17.9 What iteration 7 *doesn't* have
+
+- No multi-region.
+- No artifact signing (cosign, Notary).
+- No SBOM generation.
+
+These would be the next steps for a real production pipeline. We cover them as gaps in [Chapter 20](#chapter-20-production-grade-gaps).
 
 ---
+
 
 # Part III — Advanced Topics
 
 # Chapter 18: Observability
 
-## 18.1 The three pillars
+## 18.1 Concept — three pillars (and a fourth)
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Metrics      │  Logs           │  Traces                   │
-├─────────────────────────────────────────────────────────────┤
-│  Aggregated   │  Discrete       │  Request paths            │
-│  numbers      │  events         │  across services          │
-│  over time    │                 │                           │
-│               │                 │                           │
-│  e.g.,        │  e.g.,          │  e.g.,                    │
-│  req/sec      │  "user X        │  client → API →           │
-│  CPU %        │   logged in"    │   DB → cache → response   │
-│  latency p99  │                 │                           │
-├─────────────────────────────────────────────────────────────┤
-│  Tool:        │  Tool:          │  Tool:                    │
-│  Prometheus   │  Loki / ELK     │  Jaeger / Tempo           │
-│  Datadog      │  Splunk         │  Datadog APM              │
-└─────────────────────────────────────────────────────────────┘
++----------+   +----------+   +----------+
+|  Logs    |   | Metrics  |   |  Traces  |
+| (events) |   |(timeseries)|  |(req path)|
++----------+   +----------+   +----------+
+                     +-----------+
+                     | Profiles  | <-- fourth pillar (newer)
+                     | (CPU/mem  |
+                     |  flame)   |
+                     +-----------+
 ```
 
-Our lab has metrics (Prometheus). Logs come for free from Container Insights (Azure side). Traces would be next.
+- **Logs** — discrete events, often unstructured. Postgres logs, app stdout, kernel messages.
+- **Metrics** — numbers over time. CPU 23%, requests/sec, error rate.
+- **Traces** — request paths across services. "this 500ms came from 400ms in DB, 80ms in backend, 20ms in network."
+- **Profiles** — what code burned the CPU? What allocated the memory?
 
-## 18.2 Metrics with Prometheus
+Most platforms ship the first three. Profiling is the new frontier (Pyroscope, Parca, Grafana Cloud Profiles).
 
-### What we measure
+## 18.2 Why it matters
 
-| Category | Example metric |
-|---|---|
-| **RED method** (request/error/duration) | `istio_requests_total`, `istio_request_duration_milliseconds_bucket` |
-| **USE method** (utilization/saturation/errors) | `container_cpu_usage_seconds_total`, `container_memory_usage_bytes` |
-| **Business KPIs** | `orders_placed_total`, `signups_completed_total` |
-| **Internal app metrics** | `db_queries_total`, `cache_hits_total` |
+Without observability:
 
-### Exposition format
+- "It's slow" → "I don't know why."
+- "Users are seeing 500s" → "I don't know which service."
+- "Deploy seems fine" → "...and we don't notice the regression for two days."
 
-Prometheus pulls a text endpoint:
+Observability collapses the time-to-understand and is the difference between a platform people trust and one they don't.
 
-```
-# HELP http_requests_total Total HTTP requests
-# TYPE http_requests_total counter
-http_requests_total{method="GET",status="200"} 1234
-http_requests_total{method="GET",status="500"} 5
-
-# HELP http_request_duration_seconds Request duration
-# TYPE http_request_duration_seconds histogram
-http_request_duration_seconds_bucket{le="0.005"} 1230
-http_request_duration_seconds_bucket{le="0.01"} 1232
-http_request_duration_seconds_bucket{le="+Inf"} 1234
-```
-
-Apps expose `/metrics`. Istio sidecars expose at port 15090.
-
-### Cardinality matters
-
-Each unique label combination = one time series. Too many = Prometheus OOM:
+## 18.3 The Prometheus model
 
 ```
-BAD:  http_requests_total{user_id="abc123"}      ← unbounded
-GOOD: http_requests_total{endpoint="/api/info"}   ← finite set
++---------+   /metrics  +-------------+   PromQL  +---------+
+| target  |<------------|  Prometheus |<----------|  Grafana|
+| (app)   |   pull      |  (TSDB)     |  query    |   UI    |
++---------+             +-------------+           +---------+
+                              ^
+                              | rules
+                              v
+                       +-------------+
+                       | Alertmanager|
+                       +-------------+
+                              |
+                              v
+                       pager / slack
 ```
 
-Don't put user IDs, request IDs, or timestamps as labels.
+- **Pull-based** — Prometheus scrapes targets' `/metrics` endpoints on a schedule.
+- **Service discovery** — in k8s, ServiceMonitor and PodMonitor CRDs tell Prometheus what to scrape.
+- **PromQL** — the query language. Powerful but spiky learning curve.
+- **Alertmanager** — handles routing, deduplication, silencing.
 
-## 18.3 Logs
+## 18.4 Key metric types
 
-Centralized logging answers "what happened?" Tools:
-- **ELK** (Elasticsearch + Logstash + Kibana)
-- **EFK** (Elasticsearch + Fluentd + Kibana)
-- **Loki** (lightweight, label-based like Prometheus)
-- **Cloud-managed** — Azure Log Analytics, AWS CloudWatch, GCP Cloud Logging
-
-In Kubernetes, the pattern:
-```
-App pod → stdout → kubelet → log driver → forwarder → backend
-```
-
-Forwarders: Fluentd, Fluent Bit, Promtail, Vector.
-
-### Structured logging
-
-Bad:
-```
-INFO: User abc123 logged in from 1.2.3.4
-```
-
-Good (JSON):
-```json
-{"level":"info","msg":"login","user_id":"abc123","ip":"1.2.3.4","ts":"2026-05-14T12:00:00Z"}
-```
-
-Queryable. Filterable. Aggregatable.
-
-## 18.4 Traces
-
-For distributed systems. Each request gets a `trace_id` that follows it across services.
-
-```
-[Frontend]            [Backend]              [Database]
-     │                    │                       │
-     │   GET /api/info    │                       │
-     │   trace_id=abc     │                       │
-     ├──────────────────► │                       │
-     │                    │                       │
-     │                    │  SELECT * FROM ...    │
-     │                    │  trace_id=abc         │
-     │                    ├─────────────────────► │
-     │                    │                       │
-     │                    │ ◄─── rows ────────────┤
-     │ ◄───── JSON ───────┤                       │
-```
-
-The trace shows: frontend → backend took 50ms total, of which DB call was 30ms.
-
-Tools: Jaeger, Zipkin, Tempo, Datadog APM, NewRelic.
-
-Istio auto-emits traces with `trace_id` propagated via B3 or W3C headers. App must propagate the header in calls.
-
-## 18.5 SLI, SLO, SLA
-
-| Term | Definition | Example |
+| Type | Example | When to use |
 |---|---|---|
-| **SLI** (Service Level Indicator) | A metric you measure | "% of requests that succeed in <200ms" |
-| **SLO** (Service Level Objective) | An internal target | "99.9% of requests succeed in <200ms over a 28-day window" |
-| **SLA** (Service Level Agreement) | A contract with consequences | "Customer gets credit if SLO not met for 1 month" |
+| Counter | `http_requests_total` | Things that only go up (resettable on restart) |
+| Gauge | `memory_bytes` | Things that go up and down |
+| Histogram | `request_duration_seconds_bucket` | Distributions (p50/p99) |
+| Summary | quantiles computed in-app | Like histogram but client-side |
 
-Burn rate alerting: alert when SLO budget is consumed faster than expected.
+**Rule of thumb:** prefer histograms over summaries — they aggregate across instances correctly.
+
+## 18.5 The RED method and the USE method
+
+| Method | For | Track |
+|---|---|---|
+| **RED** | Services | **R**ate, **E**rrors, **D**uration |
+| **USE** | Resources | **U**tilization, **S**aturation, **E**rrors |
+
+Both fit on one Grafana dashboard. If you remember nothing else: rate, errors, duration for every service; utilization, saturation, errors for every node and disk.
+
+## 18.6 Istio + Prometheus in our lab
+
+Envoy sidecars emit metrics like:
+
+- `istio_requests_total{response_code, source_workload, destination_workload}` — counter.
+- `istio_request_duration_milliseconds_bucket` — histogram.
+- `envoy_cluster_upstream_cx_active` — connections.
+
+Our `PodMonitor` scrapes them. Grafana dashboards (Istio Mesh, Istio Service, Istio Workload — they ship as dashboard IDs 7639/7636/7630) give you all the visualization out of the box.
+
+## 18.7 Logs — what we don't have (yet)
+
+The lab doesn't ship a logging pipeline. AKS sends container stdout to Log Analytics via the OMS agent, which is enough for "give me the last 100 lines of pod X" but not for fleet-wide queries.
+
+For real systems, the path is:
 
 ```
-SLO: 99.9% over 28 days
-Allowed errors: 0.1% × total requests
-Budget: 0.1% × 28 days = ~40 minutes of full downtime per month
-
-If we burned 50% of the budget in the first 2 days → fast burn → page on-call
+pod stdout -> node agent (Fluent Bit/Vector/Promtail) -> backend
+                                                          (Loki / ELK / Splunk / Azure Monitor)
 ```
 
-## 18.6 Alerting
+We'd add Loki + Promtail for a Grafana-native stack, or Fluent Bit + Elasticsearch for the heavier option.
 
-Prometheus alerts:
+## 18.8 Tracing — also not in the lab
 
-```yaml
-groups:
-  - name: api
-    rules:
-      - alert: HighErrorRate
-        expr: |
-          sum(rate(http_requests_total{status=~"5.."}[5m])) /
-          sum(rate(http_requests_total[5m])) > 0.05
-        for: 5m
-        annotations:
-          summary: "5xx error rate > 5% for 5 minutes"
-          runbook: https://wiki.example.com/runbooks/high-error
+Istio can emit Zipkin/Jaeger spans for free. Adding a tracing backend (Jaeger, Tempo) would close this gap. For interview talking points: "we'd add Tempo, configure Istio to sample 10%, and trace request paths through frontend → backend → DB."
+
+## 18.9 SLOs and error budgets
+
+A **Service Level Objective** is a target: "99.9% of requests should be successful." A **Service Level Indicator** is the measurement: actual success rate. An **error budget** is `100% - SLO` — the amount of failure you're allowed.
+
+```
+SLO:           99.9%
+30-day window: 43,200 minutes
+Error budget:  43,200 * 0.001 = 43.2 minutes of "down"
 ```
 
-Alertmanager → PagerDuty/Opsgenie/Slack.
+When the budget is exhausted, you stop shipping risky changes. When you have budget left, you can move faster. **This converts reliability from a vibes-based to a numbers-based decision.**
 
-### Alert hygiene
+## 18.10 Interview talking points
 
-- **Page only on customer-impacting issues** — don't page on disk warnings
-- **Every alert has a runbook** — "the on-call doesn't have to remember"
-- **No alert without an SLO** — otherwise you're alerting on arbitrary thresholds
-- **Burn rate over single events** — flapping noise vs sustained issues
+> **Q:** "How would you measure the health of a service?"
+>
+> "RED method: request rate, error rate, duration. Plot all three. The error rate alone misses 'silently slow.' The duration alone misses 'failing.' The rate alone misses 'nobody's calling it.' Three signals together tell the whole story."
+
+> **Q:** "Pull vs push for metrics?"
+>
+> "Prometheus is pull. The advantages: targets don't need to know where the metrics backend is, dead targets get noticed (scrape fails), and security — the backend opens connections, not the apps. Disadvantages: doesn't fit short-lived jobs (Pushgateway exists for those), and harder for jobs behind NAT. Most workloads should be pull. Cron jobs and serverless = push."
+
+> **Q:** "What's the difference between SLO and SLA?"
+>
+> "SLO is internal — what you aim for. SLA is contractual — what you owe customers, usually with refunds attached. SLA is always weaker than SLO so you have margin. Define SLOs to drive engineering decisions; SLA is the lawyer-facing artifact."
+
+## 18.11 Exercises
+
+1. Write a counter that increments on every request. Scrape with Prometheus.
+2. Write a histogram for request duration. Query the p99.
+3. Add a PrometheusRule alert: "error rate > 5% for 5 minutes."
+4. Create a Grafana dashboard with three panels: rate, errors, duration.
+5. Define an SLO (99.5%) and burn-rate alerts (fast and slow burn).
+6. Add Loki, ship logs, query "all logs from one pod in the last hour."
 
 ---
 
@@ -4183,559 +4808,562 @@ Alertmanager → PagerDuty/Opsgenie/Slack.
 
 ## 19.1 Defense in depth
 
-No single control protects you. Layer security:
-
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ 1. Identity                                                  │
-│    SSO, MFA, least-privilege RBAC, Workload Identity        │
-├─────────────────────────────────────────────────────────────┤
-│ 2. Network                                                   │
-│    Private clusters, NSGs, NetworkPolicies, WAF             │
-├─────────────────────────────────────────────────────────────┤
-│ 3. Supply chain                                              │
-│    Image scanning (Trivy), signing (Cosign), SBOM (Syft)    │
-├─────────────────────────────────────────────────────────────┤
-│ 4. Workload                                                  │
-│    Non-root, drop caps, read-only rootfs, PSS restricted    │
-├─────────────────────────────────────────────────────────────┤
-│ 5. Runtime                                                   │
-│    Falco for anomaly detection                              │
-├─────────────────────────────────────────────────────────────┤
-│ 6. Secrets                                                   │
-│    External Secrets, Key Vault, rotation                    │
-├─────────────────────────────────────────────────────────────┤
-│ 7. Application                                               │
-│    SAST (SonarQube), DAST (ZAP), dependency scanning        │
-├─────────────────────────────────────────────────────────────┤
-│ 8. Data                                                      │
-│    Encryption at rest, in transit, key management           │
-└─────────────────────────────────────────────────────────────┘
++----------------------------------------------------+
+|  Identity (RBAC, AAD)                              |
+|    +----------------------------------------+      |
+|    | Network (NSG, NetworkPolicy)           |      |
+|    |   +-------------------------------+    |      |
+|    |   | Application (input val, CORS) |    |      |
+|    |   |   +-----------------------+   |    |      |
+|    |   |   | Data (encryption,     |   |    |      |
+|    |   |   |  audit, secret mgmt)  |   |    |      |
+|    |   |   +-----------------------+   |    |      |
+|    |   +-------------------------------+    |      |
+|    +----------------------------------------+      |
++----------------------------------------------------+
 ```
 
-## 19.2 Secrets management
+Each layer fails some day. Defense in depth means a breach of one layer doesn't compromise the whole system.
 
-### Bad
-- Hardcoded in code
-- Hardcoded in values.yaml (our lab — known gap)
-- Environment variables in Dockerfile
+## 19.2 The least-privilege rule
 
-### OK
-- Kubernetes Secrets (base64, not encrypted; encryption-at-rest must be enabled)
-- HashiCorp Vault (with auth and access control)
+For every principal — user, SP, MI, pod — the question is: "What's the smallest set of permissions this needs?" Default to **none**, add **what's required**, never more.
 
-### Best
-- External Secrets Operator + Key Vault / AWS Secrets Manager
-- Workload Identity for service-to-service auth (no shared secrets)
-- Short-lived tokens, rotated automatically
+Practical rules:
 
-## 19.3 Container security
+- ServiceAccounts for pods, not the `default` SA.
+- Roles, not ClusterRoles, unless cluster-scoped.
+- Read-only when read suffices.
+- Time-bound when possible (PIM in Azure).
 
-| Practice | Detail |
+## 19.3 Secrets — the eternally-difficult problem
+
+```
++------------------+   +----------------+   +----------------+
+| Source of truth  |-->|  External      |-->| k8s Secret     |
+| (Key Vault /     |   |  Secrets       |   | (consumed by   |
+|  AWS Secrets Mgr)|   |  Operator      |   |  pods)         |
++------------------+   +----------------+   +----------------+
+```
+
+The pattern: secrets live in a vault. An operator syncs them into k8s as Secret objects. Apps read Secret objects normally. **Secrets never live in Git.**
+
+### Kubernetes Secret is base64, not encryption
+
+```bash
+echo -n "supersecret" | base64
+# c3VwZXJzZWNyZXQ=        <-- not "encryption", reversible by anyone
+```
+
+By default, etcd stores Secrets in plaintext. Enable **etcd encryption at rest** on real clusters. AKS does this for you by default.
+
+### What we do in the lab
+
+For lab purposes, Postgres password is in `values-prod.yaml` (and `.gitleaksignore` covers a textbook example). In a real environment we'd:
+
+1. Store the password in Azure Key Vault.
+2. Use External Secrets Operator or CSI Secret Driver.
+3. Pods mount the Secret as files; never as env vars (env can leak via `/proc`).
+
+## 19.4 mTLS and zero trust
+
+```
+Without mTLS:     pod-A --TCP--> pod-B
+With mTLS:        pod-A --TLS(cert==SVID)--> pod-B
+                       ^                     ^
+                       |                     |
+                  identity = SA            verifies cert + identity
+```
+
+Istio gives us mTLS for free. In **STRICT** mode, every pod-to-pod call inside the mesh requires a valid client cert. We use **PERMISSIVE** for the lab (allows non-mesh callers) but `STRICT` is the production target.
+
+**Zero trust** means: don't assume "inside the network" = trustworthy. Authenticate every hop.
+
+## 19.5 Image security
+
+| Practice | What it does |
 |---|---|
-| Run as non-root | `USER 1001` in Dockerfile; `runAsNonRoot: true` in PodSecurityContext |
-| Drop capabilities | `securityContext.capabilities.drop: [ALL]` |
-| Read-only rootfs | `readOnlyRootFilesystem: true` |
-| No privileged | `privileged: false` (default but verify) |
-| Minimal base | distroless, alpine, scratch |
-| Pin by digest | `myimage@sha256:abc...` not `myimage:latest` |
-| Scan images | Trivy, Grype, Snyk in CI |
-| Sign images | Cosign + Sigstore |
-| Admission policy | Kyverno/Gatekeeper enforces signing + scanning |
+| Pin to digest (`@sha256:...`) | Prevents tag mutation attacks |
+| Sign images (cosign) | Verify what was built is what's running |
+| SBOM (syft, Trivy) | Know what's *inside* the image |
+| Scan for CVEs (Trivy, Grype) | Catch known issues |
+| Distroless / minimal bases | Smaller attack surface |
+| Pull from private registry | No public-registry rate-limit / takeover |
 
-## 19.4 Network policies
+We do: distroless-ish (alpine), Trivy scan (report-only), private ACR. We don't yet: cosign, SBOM publication.
 
-Default deny + explicit allow:
+## 19.6 NetworkPolicy
+
+By default, all pods can reach all pods. NetworkPolicy adds firewalls at the pod level.
 
 ```yaml
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: default-deny-all
-  namespace: dev
-spec:
-  podSelector: {}
-  policyTypes: [Ingress, Egress]
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-frontend-to-backend
-  namespace: dev
+  name: backend-allow-frontend
+  namespace: app-prod
 spec:
   podSelector:
-    matchLabels:
-      app: backend
+    matchLabels: { app: backend }
   policyTypes: [Ingress]
   ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app: frontend
-      ports:
-        - protocol: TCP
-          port: 5678
+  - from:
+    - podSelector:
+        matchLabels: { app: frontend }
+    ports:
+    - port: 8080
 ```
 
-Without these, pods can talk to anything. Kubernetes default is "allow all".
+This says: backend pods only accept ingress from frontend pods on 8080. Everything else is rejected.
 
-## 19.5 Pod Security Standards (PSS)
+**Gotcha:** NetworkPolicy needs a CNI that supports it. kubenet on AKS has limited support. Azure CNI + Calico / Cilium is the typical setup.
 
-Replaced PSPs (deprecated). Three profiles:
+## 19.7 Pod Security Standards
 
-| Profile | What it allows |
-|---|---|
-| `privileged` | Everything (default in many clusters) |
-| `baseline` | No privileged escalation, hostNetwork, hostPID |
-| `restricted` | Strict — non-root, drop caps, read-only rootfs, etc. |
+Three levels:
 
-Apply via namespace label:
+| Level | What's allowed | When to use |
+|---|---|---|
+| `privileged` | Anything | System pods / Day-0 only |
+| `baseline` | Most stuff, no obvious unsafe | Default for app namespaces |
+| `restricted` | Hardened (non-root, RO root FS, no caps) | Production app namespaces |
+
 ```yaml
+apiVersion: v1
+kind: Namespace
 metadata:
+  name: app-prod
   labels:
     pod-security.kubernetes.io/enforce: restricted
 ```
 
-## 19.6 RBAC principles
+PSAs replaced the old PodSecurityPolicy (deprecated, removed in 1.25).
 
-- **Least privilege** — only what's needed
-- **Namespace-scoped > Cluster-scoped** — Role + RoleBinding before ClusterRole + ClusterRoleBinding
-- **Service Accounts** — every Pod should have its own; never use `default`
-- **Audit logging** — Kubernetes API audit logs to LAW/CloudWatch
-- **Periodic review** — quarterly access review
+## 19.8 Supply chain — the hot topic
+
+```
+code -> commit -> CI build -> image -> registry -> cluster
+   ^        ^         ^          ^         ^          ^
+   |        |         |          |         |          |
+  signed   PRs    isolated     signed     scanned   admission
+  commits  reviewed runners    images    on push    controller verifies
+                                                    sigs (Kyverno/Sigstore)
+```
+
+Each arrow is a place to inject something nasty (SolarWinds, codecov, etc). Production-grade supply chain controls all of them. Cosign + Sigstore + Kyverno admission policies is the modern stack.
+
+We don't have this in the lab. Documented as a gap.
+
+## 19.9 In our lab (security summary)
+
+- **Identity:** SP with bounded scope; AKS uses MI to pull from ACR.
+- **Network:** NSGs at subnet level; no NetworkPolicy yet.
+- **mTLS:** Istio PERMISSIVE (not STRICT).
+- **Secrets:** values files for the lab (gitleaks scans, ignore file for false positives).
+- **Image:** Trivy scan (report-only). No signing.
+- **Cluster:** AKS managed by Azure (etcd encrypted, control plane patched).
+
+## 19.10 Interview talking points
+
+> **Q:** "How do you manage secrets in Kubernetes?"
+>
+> "Not in YAML. Use a vault — Key Vault, AWS Secrets Manager, HashiCorp Vault — as the source of truth. Sync into k8s Secret objects via External Secrets Operator or CSI Secret Driver. Enable etcd encryption at rest. Mount as files, not env vars. Rotate via the vault (re-sync triggers pod restart). The Git repo never sees a real secret."
+
+> **Q:** "What is mTLS and when would you use it?"
+>
+> "Mutual TLS — both client and server present certs. Typical TLS only authenticates the server. Use mTLS for service-to-service when you want zero trust: every hop authenticates. Service mesh (Istio, Linkerd) automates the cert issuance so you don't manage them per app. Performance cost is negligible at scale; the main work is making sure your identity model (cert == SA) lines up with your authorization model."
+
+> **Q:** "What's the principle of least privilege in k8s?"
+>
+> "Each ServiceAccount has only the permissions it strictly needs. The default SA in a namespace should have nothing. Roles, not ClusterRoles, unless cluster-scope is required. Read-only when reads suffice. For RBAC reviews, periodically audit `kubectl auth can-i --as=sa:ns:name --list` per SA."
+
+## 19.11 Exercises
+
+1. Find a Pod running as `default` SA in your cluster. Move it to a dedicated SA with no permissions.
+2. Add a NetworkPolicy that defaults-deny in a namespace. Add an explicit allow for what should work.
+3. Enable the `restricted` PSA on a namespace. Watch which pods refuse to start.
+4. Sign an image with cosign. Verify.
+5. Configure Kyverno to reject unsigned images.
+6. Set up External Secrets to pull a Key Vault secret into a k8s Secret.
 
 ---
 
-# Chapter 20: Production-Grade Gaps in Our Lab
+# Chapter 20: Production-Grade Gaps
 
-The lab is a learning artifact. For production, address these:
+## 20.1 What this lab is not
 
-## 20.1 Identity & Secrets
+The lab is intentionally small. Things you'd add or change for production:
 
-| Gap | Production fix |
-|---|---|
-| SP password for ACR push | **Workload Identity** — AKS pod assumes Azure AD app via OIDC federation |
-| Hardcoded DB passwords in values.yaml | **External Secrets Operator** pulling from Azure Key Vault |
-| Long-lived GitHub PAT | **GitHub OIDC** federation to Azure (no PAT needed) |
-| Static SP credentials in `~/.azure-lab.env` | **Azure CLI with managed identity** on a VM with system MSI |
+## 20.2 High availability
 
-## 20.2 Network
+| Gap | What we have | What prod needs |
+|---|---|---|
+| Cluster nodes | 1 node (B2s) | 3+ nodes across AZs |
+| Database | StatefulSet, 1 replica | Managed Postgres with HA, backups |
+| Region | Single (eastus2) | Active/passive or active/active |
+| Load balancer | Single public LB | Front Door / global LB |
 
-| Gap | Production fix |
-|---|---|
-| Public AKS API | **Private cluster** + bastion |
-| No NetworkPolicies | Default deny + explicit allow per service |
-| Istio PERMISSIVE mTLS | **STRICT** + PeerAuthentication |
-| Public LoadBalancer | **Internal LB** behind App Gateway + WAF |
+## 20.3 Storage
 
-## 20.3 Supply chain
+| Gap | What we have | What prod needs |
+|---|---|---|
+| Persistent volumes | `managed-csi` LRS disk | ZRS or premium SSD, snapshotted |
+| Backups | None | Velero or Azure Backup, tested restores |
+| Disaster recovery | None | Geo-replicated, restore runbook |
 
-| Gap | Production fix |
-|---|---|
-| Image tag pinning | **Digest pinning** (`@sha256:...`) |
-| Trivy report-only | Block on Critical; auto-PR fixes via Renovate |
-| No image signing | **Cosign** sign in CI; **Kyverno** policy verifies at admission |
-| No SBOM | **Syft** generates SPDX SBOM, stored as ACR artifact |
+## 20.4 Security
 
-## 20.4 Reliability
+| Gap | What we have | What prod needs |
+|---|---|---|
+| Image signing | None | cosign + admission verification |
+| Secrets in repo | Some (lab) | All secrets in Key Vault |
+| Network isolation | Public LB | Private cluster, private endpoints |
+| Audit log retention | Default Azure | Centralized SIEM (Sentinel) |
+| Pod Security | None set | `restricted` PSA on app namespaces |
+| NetworkPolicy | None | Default-deny per namespace |
 
-| Gap | Production fix |
-|---|---|
-| Single AKS cluster | Multi-cluster fleet (active-passive across regions) |
-| Postgres StatefulSet | **Azure Database for PostgreSQL** (managed, replicas, PITR) |
-| No backups | **Velero** scheduled snapshots of cluster + PV state |
-| No HPA | Horizontal Pod Autoscaler on CPU/memory + custom metrics |
-| No automated rollback | Prometheus alert → webhook → `kubectl argo rollouts abort` |
+## 20.5 Observability
 
-## 20.5 Process
+| Gap | What we have | What prod needs |
+|---|---|---|
+| Metrics | Prometheus | Long-term storage (Mimir, Cortex) |
+| Logs | Container stdout | Loki/ELK with retention |
+| Traces | None | Tempo/Jaeger with sampling |
+| Alerts | A few rules | Full SLO + burn-rate alerts |
+| Synthetic monitoring | None | Pingdom/Azure Application Insights |
+| On-call rotation | None | PagerDuty / Opsgenie integration |
 
-| Gap | Production fix |
-|---|---|
-| Direct push to master | **Branch protection** — PR required, CI must pass, ≥1 approval |
-| Manual approval clicks | **Change Advisory Board** integration (ServiceNow) |
-| No alerts | **SLO-driven alerts** in Alertmanager → PagerDuty |
-| One environment per cluster | Separate staging cluster with prod-like traffic |
+## 20.6 Deployment
+
+| Gap | What we have | What prod needs |
+|---|---|---|
+| Blue/green | Yes (frontend, backend) | Same + canary for low-risk changes |
+| Analysis | Success-rate + min-traffic | + latency p99, + business metrics |
+| Rollback | Manual `helm rollback` | Automated via failed analysis |
+| Multi-env promote | dev -> prod | dev -> staging -> prod with bake time |
+| Feature flags | None | LaunchDarkly / Flagsmith / Unleash |
+
+## 20.7 Compliance
+
+| Gap | What we have | What prod needs |
+|---|---|---|
+| Audit logs | Default Azure | Tamper-resistant retention (SOC2/ISO) |
+| Encryption | At rest by default | + customer-managed keys (CMK) |
+| Access reviews | None | Quarterly attestation via PIM |
+| Change management | Git PRs | + JIRA tickets + approvals |
+| Vulnerability mgmt | Trivy report | Tracked CVEs with SLA per severity |
+
+## 20.8 Cost
+
+| Gap | What we have | What prod needs |
+|---|---|---|
+| Right-sizing | Eyeballed | VPA recommendations + monthly review |
+| Idle | Run-and-destroy | Spot nodes for non-critical; cluster autoscaler |
+| Cost attribution | None | Tags + Kubecost / Azure Cost Mgmt |
+
+## 20.9 How to discuss the gaps in an interview
+
+The trap: claiming the lab is production-ready. Don't.
+
+The good answer: **"Here's what I built, here's what I'd add for production, and here's roughly the order I'd add it in based on risk."**
+
+Sample priorities:
+
+1. Multi-AZ nodes + managed Postgres (HA).
+2. Secrets in Key Vault + External Secrets.
+3. NetworkPolicy default-deny.
+4. Image signing + admission verification.
+5. Centralized logging.
+6. Backups + restore test.
+
+Each of these is a 1-2 day project in isolation. The lab is the starting position.
 
 ---
 
 # Chapter 21: Interview Questions and Answers
 
-50 questions categorized. For each, the format is:
+This chapter is a curated list of platform engineering questions with concise, structured answers. Use it for warm-up and self-quizzing.
 
-- **Q:** the question
-- **Bad answer:** what NOT to say
-- **Good answer:** what TO say
-- **Why:** the reasoning
+## 21.1 Cloud and Azure
 
-## Kubernetes
+> **Q:** "Walk me through how a request reaches a pod in your AKS cluster."
 
-### 1. Difference between a Deployment and a StatefulSet?
+DNS resolves the public hostname to the Azure Load Balancer IP. The LB sends the packet to a node port. kube-proxy (iptables/IPVS) rewrites the destination to a pod IP via the Service's Endpoints. In our lab Istio's ingress gateway is the first pod hit; it routes (via VirtualService) to the right backend Service, which Endpoints to the workload pods.
 
-**Bad:** "Deployment is for apps, StatefulSet is for databases."
+> **Q:** "What's the difference between a system and user node pool?"
 
-**Good:** "Deployments treat pods as cattle — interchangeable, random naming, random delete order. StatefulSets treat pods as pets — stable identity (`mydb-0`, `mydb-1`), stable storage (each gets its own PVC), ordered start (0 before 1), ordered shutdown (reverse). Use Deployments for stateless apps. Use StatefulSets for anything that needs stable identity, stable storage, or ordered startup — typical examples are databases, message brokers, distributed consensus systems like Kafka or etcd."
+System pool runs cluster-critical pods (CoreDNS, metrics-server, omsagent). It's required, has taints AKS manages for you, and should not run application workloads. User pools are for your apps — you can add many, with different SKUs, OS, taints, or autoscaling settings.
 
-**Why:** Show the technical detail and the reasoning, not just the conclusion.
+> **Q:** "Why might you choose Azure CNI over kubenet?"
 
-### 2. Walk through what happens when you run `kubectl apply -f deployment.yaml`
+Pod IPs come from the VNet, so they're directly addressable from other Azure resources without NAT. Required for advanced features like Azure Private Endpoints to pods, Calico/Cilium network policies, and predictable performance. Cost: heavier IP usage — every pod gets a VNet IP.
 
-**Good:** "kubectl reads the YAML, validates it against API schema, sends it to the API server. API server authenticates the request (token, cert), authorizes via RBAC, persists to etcd. The Deployment controller (a control loop) sees the new Deployment, creates a ReplicaSet to match the spec. ReplicaSet controller sees the ReplicaSet has 0 of the desired pods, creates pod objects. Scheduler watches for unscheduled pods, finds a node with capacity, binds the pod. kubelet on that node sees the binding, pulls images, starts containers via container runtime (containerd). kubelet reports back to API server. Once ready, the Service's endpoints get updated to include the pod IP, kube-proxy on each node updates iptables/IPVS rules to load balance to that pod."
+## 21.2 Kubernetes
 
-**Why:** Demonstrates understanding of the control plane architecture, control loops, and the role of each component.
+> **Q:** "What happens when you `kubectl apply` a Deployment?"
 
-### 3. How does a Service load balance to multiple Pods?
+kubectl sends the YAML to the API server (after auth/authz/admission). API server writes to etcd. The Deployment controller notices, creates/updates a ReplicaSet. ReplicaSet controller creates pods. Scheduler binds pods to nodes. kubelet on each node sees the binding, pulls images, starts containers, reports back. Status is reconciled back up the chain.
 
-**Good:** "Service has a selector matching pod labels. The Endpoints (or EndpointSlices in newer versions) resource holds the list of pod IPs matching the selector — kept in sync by the endpoint controller. kube-proxy on each node watches Endpoints and programs iptables/IPVS rules: traffic to the Service ClusterIP gets DNAT'd to one of the pod IPs, chosen by hash. There's no actual load balancer process — it's pure kernel networking. The 'load balancing' is just N pod IPs sharing requests pseudo-randomly."
+> **Q:** "What's an Operator? How is it different from a controller?"
 
-**Why:** Many candidates think there's a daemon doing the balancing. Showing you know it's iptables/IPVS is depth.
+Every Operator is a controller. The distinction is intent: an Operator codifies *operational knowledge* about a specific application — installing it, configuring it, backing up, upgrading, failing over. Postgres operators run Postgres. Prometheus Operator manages Prometheus. A plain controller might just manage a CRD without app-specific knowledge.
 
-### 4. Pod stuck in Pending. Debug steps.
+> **Q:** "How do you debug 'service is unreachable from another pod'?"
 
-**Good:**
-```
-1. kubectl describe pod <name> — events at the bottom usually tell you
-2. Common: 'Insufficient cpu/memory' — check requests vs node allocatable
-   kubectl describe nodes | grep -A 5 Allocatable
-3. 'FailedScheduling: 0/N nodes match' — node selectors, taints, affinity
-4. 'PVC not bound' — StorageClass missing or PVC mistyped
-5. 'No nodes available' — cluster empty (autoscaler off?)
-6. kubectl get events --sort-by='.lastTimestamp' | tail -20
-```
+(1) `kubectl get svc` — does the Service exist, right port, right selector? (2) `kubectl get endpoints` — are there endpoints? Empty endpoints = selector matched no pods. (3) From a pod: `nslookup <svc>.<ns>.svc.cluster.local`. (4) `curl http://<svc>:<port>`. If DNS fails: CoreDNS issue. If DNS works but TCP fails: NetworkPolicy, kube-proxy, or the service's containers aren't listening. Tools: `kubectl debug node/...` and `nsenter` are the next stop.
 
-**Why:** Show a systematic debugging mindset.
+## 21.3 GitOps and CI/CD
 
-### 5. What's the role of a sidecar container?
+> **Q:** "Push-based vs pull-based deployment — which would you pick?"
 
-**Good:** "Augments the main container without changing it. Common patterns: logging agent that ships logs from a shared volume, proxy that handles TLS termination or mesh networking (like Istio's istio-proxy), monitoring agent that scrapes metrics, init container for one-time setup. Sidecars share the Pod's network namespace and storage, so they can communicate via localhost or shared volumes."
+Pull-based (GitOps). Cluster credentials never leave the cluster, CI doesn't need cluster creds, and drift remediation is built in (selfHeal). The trade-off is feedback latency — CI doesn't directly know when the deploy succeeded; you observe it via ArgoCD's status. For most teams the security + drift benefits outweigh the latency. We use pull-based with ArgoCD in this lab.
 
-**Why:** Shows knowledge of the Pod-as-deployment-unit philosophy.
+> **Q:** "What's a blue/green deployment?"
 
-## CI/CD
+Run two identical environments — current (blue) and new (green). Switch traffic atomically at the load balancer. If green has issues, switch back. Cost: double the resources for the cutover window. Benefit: zero-downtime, instant rollback. In our lab Argo Rollouts manages this — the activeService and previewService objects point at different sets of pods, and the active selector flips on promotion.
 
-### 6. GitOps vs CIOps?
+> **Q:** "How do you decide a deployment is healthy enough to promote?"
 
-**Good:** "GitOps: Git is the source of truth for cluster state. A controller (ArgoCD or Flux) watches Git, applies changes to the cluster. CI's job ends at committing to Git. CIOps: CI pipeline directly applies changes via kubectl or helm. Cluster state drifts from Git silently. Differences: GitOps has full audit trail in Git, easy rollback via git revert, automated drift detection. CIOps is simpler to set up but harder to scale across teams and clusters."
+A signal that combines (a) the application liveness — pods are up, ready, not crashing — and (b) production traffic behavior — error rate stays within SLO, latency p99 stays within SLO. In our lab we use Argo Rollouts AnalysisTemplate with two PromQL metrics: minimum traffic and success rate. Both must pass.
 
-### 7. Blue/green vs canary?
+## 21.4 Networking
 
-**Good:** "Both reduce blast radius. Blue/green: full stack of new version runs alongside old, instant cutover. Simpler — 100% traffic on one version. Use when: small risk tolerance, fast rollback critical, no traffic-shifting needed. Canary: gradually shift X% of traffic to new version, observe, increase. More nuanced — partial rollout. Use when: large user base where 5% sample is statistically meaningful, gradual confidence building, business KPIs need observation. Argo Rollouts supports both. Production teams often pick canary because it catches issues that only manifest at scale."
+> **Q:** "Explain the difference between a NodePort, LoadBalancer, and Ingress Service."
 
-### 8. How do you handle database migrations during deploys?
+NodePort opens a port on every node and forwards to the Service. Cluster-external but you have to know a node IP and the high-numbered port. LoadBalancer in cloud k8s provisions a real LB and gives you a public IP. One per Service is expensive. Ingress is an L7 router — one IP, many hostnames/paths, TLS termination — typically backed by a single LoadBalancer Service for the ingress controller (nginx, Istio gateway).
 
-**Good:** "Decouple them. Three patterns: (1) Pre-deploy migration — Helm pre-upgrade hook runs a Job. Risky if migration is slow or fails. (2) Expand-contract — make the schema backward compatible. Step 1: add new column nullable, deploy app that writes both old and new. Step 2: backfill. Step 3: stop writing old. Step 4: deploy app that only reads new. Step 5: drop old column. (3) Online schema change tools — pt-online-schema-change for MySQL, similar for Postgres. We never block deploys on migrations in production."
+> **Q:** "What is mTLS and when would you use it?"
 
-### 9. How do you decide between Helm and Kustomize?
+(See 19.10.)
 
-**Good:** "Helm: when you need package management (install a community chart like Prometheus). When you need conditional logic or loops. Strong for shared libraries. Kustomize: when manifests are simple, you want pure YAML, environment variations are mostly patches. Built into kubectl. Less abstraction. Hybrid: many teams use Helm for third-party (Nginx Ingress, cert-manager) and Kustomize for in-house. Some use Helm with Kustomize for post-processing."
+> **Q:** "Why might pod-to-pod traffic break in AKS?"
 
-### 10. Walk through a CI failure on a flaky test.
+NSG explicit DenyAllInBound at a priority that overrides the implicit AllowVnet rule. Or NetworkPolicy without explicit allow. Or CoreDNS misconfiguration. Or a Service with mismatched selector / no endpoints. Or the receiving container not actually listening on `0.0.0.0` (only listening on `127.0.0.1`).
 
-**Good:** "First, classify: is it a real bug intermittently exposed, or environmental? If real, fix the bug. If environmental — timing, network, shared state — fix the test. Common fixes: explicit waits instead of sleep, isolated databases per test (transaction rollback, schemaper, sanity), retries with backoff at the test level (not CI level — that hides real flakiness), pinning Docker image versions in test deps. If we can't fix it now, mark the test skipped with a TODO and a Jira link. Never delete tests without root cause."
+## 21.5 Terraform
 
-## Terraform
+> **Q:** "How do you handle Terraform state?"
 
-### 11. What's a state file? Why remote backend?
+(See 7.9.)
 
-**Good:** "Terraform's state file maps your HCL resources to real cloud resource IDs. Required for diff computation. Remote backend (Azure Storage / S3) enables team collaboration — locking prevents simultaneous applies that would corrupt state. Local state is only safe for solo work. State contains sensitive data (passwords, keys), so the backend should be encrypted and access-controlled."
+> **Q:** "What's the difference between `count` and `for_each`?"
 
-### 12. What does `terraform plan` actually do?
+`count = N` gives you N identical copies indexed by integer. `for_each = {...}` gives you copies keyed by map key. If you ever remove an element from the middle of a count list, every later element shifts and gets destroyed/recreated. `for_each` is keyed and stable. **Rule of thumb:** count only for "I want N of the same thing," for_each for everything else.
 
-**Good:** "Reads the current state file, queries the cloud APIs to refresh state (so it knows what really exists), compares against your HCL configuration, computes a diff. Output is a list of resources that will be created, changed, or destroyed. Doesn't make any changes. Save the plan to a file (`-out=tfplan`) and pass it to `apply` for guaranteed determinism — what was planned is exactly what gets applied."
+> **Q:** "How do you migrate Terraform state from local to remote?"
 
-### 13. Two devs run `terraform apply` simultaneously.
+(1) Configure the `backend` block. (2) Run `terraform init -migrate-state` — Terraform copies the local state to the backend. (3) Verify with `terraform plan` (should be no changes). (4) Delete the local `terraform.tfstate` so it can't be edited accidentally.
 
-**Good:** "The first one to start acquires a state lock (Azure blob lease, AWS DynamoDB lock, etc.). The second sees `Error acquiring state lock` and refuses to proceed. Without locking, one apply could overwrite the state changes of the other, corrupting state. After lock timeout (configurable), stale locks can be force-unlocked, but that's a manual operation requiring confirmation."
+## 21.6 Observability
 
-### 14. How do you import existing cloud resources into Terraform?
+> **Q:** "RED vs USE method?"
 
-**Good:** "`terraform import <resource-address> <real-id>` adds the resource to state. Then you write the HCL to match. Run `plan` to see if your HCL matches reality — usually it doesn't perfectly, so you adjust HCL until plan shows no changes. Newer Terraform has `import {}` blocks that combine both steps. For bulk imports, use `terraformer` or `aztfexport` tools. Don't try to do an apply right after import — verify with plan first."
+(See 18.10.)
 
-## Azure
+> **Q:** "What's a histogram in Prometheus and why prefer it over a summary?"
 
-### 15. AKS vs EKS vs GKE — when do you pick each?
+Histogram exposes pre-defined buckets (e.g., "requests in <0.1s", "<0.25s", ...). You compute quantiles at query time with `histogram_quantile()`, and you can aggregate across instances. Summary computes quantiles client-side per instance — accurate but not aggregatable. Prefer histogram for distributed services; summary is for cases where per-instance accuracy matters and aggregation doesn't.
 
-**Good:** "Mostly business alignment. AKS for shops on Azure (Entra ID SSO, ExpressRoute on-prem, enterprise agreements). EKS for mature AWS shops with deep ecosystem integration. GKE for Google-aligned shops or teams that want autopilot mode (zero-node-management). Technically all are mature. AKS has best Workload Identity story. EKS has more compute options (Fargate, multiple AMIs). GKE invented Kubernetes and has historically led in autoscaling. The choice is rarely technical at this point."
+> **Q:** "How do you alert on SLO burn rate?"
 
-### 16. Why kubenet vs Azure CNI?
+Two alerts: a **fast burn** (e.g., "burning 14× over 1h") and a **slow burn** (e.g., "burning 3× over 6h"). Fast catches major incidents quickly; slow catches sustained degradation. The math: with a 99.9% SLO and a 30-day window, a 14× burn over 1h consumes 2% of the monthly budget — page-worthy.
 
-**Good:** "kubenet: pods get a non-routable IP, NAT through node IP for outbound. Simple, uses few VNet IPs (only nodes get VNet IPs). Pods can't directly reach other Azure resources without NAT. Azure CNI: pods get VNet IPs, route directly to anything in the VNet (databases, App Service, etc.), but consumes a lot of subnet IPs (one per pod). Azure CNI Overlay is the modern compromise — pods get overlay IPs, nodes get VNet IPs, you still get the VNet routing for nodes."
+## 21.7 Security
 
-### 17. Service Principal vs Managed Identity?
+> **Q:** "How would you secure a service-to-service call inside a cluster?"
 
-**Good:** "Service Principal: an explicit Azure AD application identity with credentials (client secret or cert). Used by external systems (CI, on-prem tools). Long-lived credentials = risk. Managed Identity: Azure resources (VMs, AKS pods via Workload Identity) get an automatically-managed identity. No credentials to store. The cloud handles rotation. Always prefer Managed Identity when possible. SPs are a fallback for things outside Azure."
+mTLS via service mesh (Istio STRICT mode) plus NetworkPolicy default-deny with explicit allows. Mesh handles cryptographic identity; NetworkPolicy handles L4 access control. Belt and suspenders. Identities map to ServiceAccounts; authorization policies (Istio AuthorizationPolicy) say which identity can call which.
 
-## Observability
+> **Q:** "What's the blast radius of a leaked SP secret?"
 
-### 18. RED method vs USE method?
+Whatever the SP can do at its scope. If it's Contributor on a subscription, everything in that subscription. **Mitigations:** rotate immediately, use Managed Identity instead, restrict SP to least scope (single RG), require AAD PIM for elevation. Detection: Microsoft Defender for Cloud + Activity Log alerts on unusual SP usage.
 
-**Good:** "Two complementary approaches. RED (Tom Wilkie) is request-centric: Rate, Errors, Duration. For service-level metrics — answers 'is my service serving users well?' USE (Brendan Gregg) is resource-centric: Utilization, Saturation, Errors. For infrastructure metrics — answers 'is my CPU/disk/network healthy?' In practice you measure both. RED for app health, USE for capacity planning."
+> **Q:** "How do you handle a critical CVE in a base image you depend on?"
 
-### 19. What's an SLO?
+(1) Identify all images using it (image inventory + SBOM helps). (2) Check if the vuln is exploitable in your context (the CVSS isn't your context). (3) If exploitable: emergency rebuild and deploy with patched base. (4) If not exploitable: file ticket, fix on regular cadence. (5) For unfixable (alpine apk gaps), document the accepted risk and add a workaround (e.g., front the app with a WAF rule).
 
-**Good:** "Service Level Objective — an internal target measuring service quality from the user's perspective. Example: 99.9% of HTTP requests succeed in <200ms over a rolling 28-day window. The 0.1% is your error budget. You burn it via real failures. Burn rate alerting (Google SRE book) pages on-call when budget burns too fast. SLO drives priorities — if you have budget, ship features. If you've burned it, focus on reliability work. SLA is the external contract built on top, with penalties for missing it."
+## 21.8 Behavioural / system-design adjacent
 
-### 20. How does Prometheus collect metrics?
+> **Q:** "Tell me about a time you saw drift in production."
 
-**Good:** "Prometheus pulls (scrapes). It hits HTTP endpoints (`/metrics` typically) and parses Prometheus exposition format. Service discovery is built in — Kubernetes, Consul, EC2 — Prometheus queries the cluster for what to scrape. Each scrape gets a timestamp, stored in TSDB (time-series database). Cardinality is critical: each unique label combination is a separate time series. High cardinality (request IDs, user IDs as labels) crashes Prometheus. Push gateway exists for short-lived jobs but is generally discouraged."
+(Your specific story. Mine: an NSG was edited in the portal during an incident, then Terraform later overwrote it on a routine `apply`. Lesson: terraform plan in CI for every PR, alert on drift via `terraform plan -detailed-exitcode`, and treat the portal as read-only.)
 
-## Argo / GitOps specific
+> **Q:** "How would you design a platform for 20 product teams to deploy 50 services?"
 
-### 21. How does Argo Rollouts work under the hood?
+Multi-tenant cluster(s) with namespaces per team. ArgoCD with AppProjects per team for RBAC. A platform Helm library — internal chart for the standard service shape (Deployment + Service + VirtualService + PodMonitor). Self-service: a "deployer" repo each team owns, pointed at by ArgoCD. Guardrails: PSA `restricted`, NetworkPolicy default-deny, image admission policy. Observability: shared Prometheus + Grafana, dashboards generated from the chart. Cost attribution by namespace.
 
-**Good:** "It's a custom controller (with a Rollout CRD) that replaces Deployments. Watches Rollout objects, manages ReplicaSets directly. Blue/green: when image changes, creates a new ReplicaSet (green), routes preview Service to green, runs pre-promotion analysis. Each AnalysisRun queries Prometheus per interval, checks the success condition. On pass, switches active Service selector to point at green. On fail, scales green down. The active/preview Services are pre-existing — Rollout just updates their selectors."
+> **Q:** "What would you do in the first 30 days of a platform engineering role?"
 
-### 22. Why might prePromotionAnalysis falsely pass?
-
-**Good:** "Zero traffic. If no requests have hit the preview Service, your success rate query returns empty result, which crashes the analyzer. Common fix is `or vector(1)` so it returns 1.0 — but that means zero traffic = 100% success = false positive. The fix is a separate min-traffic gate that requires a minimum req/sec before the analysis runs. In production, this means CI must drive traffic to the preview (synthetic smoke tests, replayed prod traffic), not just sit and wait."
-
-### 23. How does ArgoCD detect drift?
-
-**Good:** "ArgoCD periodically (every 3 min by default) renders the Helm chart or kustomize output from Git, then queries the cluster for the actual resources. Diffs them. If different, the Application shows OutOfSync. With `automated.selfHeal: true`, ArgoCD applies the Git state back to the cluster automatically. With `prune: false`, ArgoCD doesn't delete resources from the cluster even if removed from Git (safety). Without `selfHeal`, drift is just reported, not corrected."
-
-### 24. ArgoCD shows Suspended. Is that bad?
-
-**Good:** "Usually no — it means an Argo Rollouts Rollout is paused at a BlueGreenPause, waiting for a human to promote or for analysis to complete. That's the production safety gate working as designed. Most dashboards alert only on Degraded, not Suspended. If you find Suspended noisy in your team, add an ArgoCD health override (Lua script) to map paused-Rollouts to Healthy. But honestly, learning what Suspended means is more useful than hiding it."
+(1) Read existing IaC and inventory infra. (2) Pair with on-call to learn pain points. (3) Inventory deploys: who deploys what, how, how often. (4) Define platform SLO. (5) Pick *one* small win that reduces friction (faster CI, drift detection, secret rotation) and ship it. (6) Document something undocumented. Build trust before redesigns.
 
 ---
 
-# Part IV — Appendix
+# Appendix A: Cheatsheets
 
-# Appendix A: Quick Reference Cheatsheets
+## A.1 kubectl
 
-## Kubernetes daily commands
-
-```bash
-# Context
-kubectl config current-context
-kubectl config use-context <name>
+```
+# context / namespace
 kubectl config get-contexts
+kubectl config use-context <ctx>
+kubectl config set-context --current --namespace=<ns>
 
-# Get
-kubectl get pods -A
-kubectl get pods -n <ns> -o wide
-kubectl get pods -l app=frontend
-kubectl get events --sort-by='.lastTimestamp' -n <ns>
+# get
+kubectl get pods                          # current ns
+kubectl get pods -A                       # all namespaces
+kubectl get pods -o wide                  # with node + IP
+kubectl get pod <p> -o yaml               # full spec
+kubectl get pod <p> -o jsonpath='{.spec.nodeName}'
 
-# Describe
-kubectl describe pod <pod-name> -n <ns>
-kubectl describe node <node-name>
+# debug
+kubectl describe pod <p>
+kubectl logs <p> -c <container>           # multi-container
+kubectl logs <p> --previous               # last restart
+kubectl exec -it <p> -- sh
+kubectl port-forward svc/<svc> 8080:80
 
-# Logs
-kubectl logs <pod-name> -n <ns>
-kubectl logs <pod-name> -c <container> --previous
-kubectl logs -f <pod-name>
+# events
+kubectl get events --sort-by='.lastTimestamp'
 
-# Exec
-kubectl exec -it <pod-name> -- sh
-kubectl exec <pod-name> -c <container> -- ls
+# rollouts
+kubectl rollout status deploy/<d>
+kubectl rollout history deploy/<d>
+kubectl rollout undo deploy/<d>
 
-# Port-forward
-kubectl port-forward -n <ns> svc/<svc-name> 8080:80
-
-# Apply
-kubectl apply -f manifest.yaml
-kubectl apply -k overlay/dev
-
-# Delete
-kubectl delete -f manifest.yaml
-kubectl delete pod <pod-name> --force --grace-period=0
-
-# Rollout
-kubectl rollout status deployment/<name>
-kubectl rollout history deployment/<name>
-kubectl rollout undo deployment/<name>
-
-# Scale
-kubectl scale deployment <name> --replicas=5
-
-# Debug
-kubectl run -it --rm debug --image=busybox -- sh
-kubectl debug node/<node> -it --image=busybox
+# argo rollouts
+kubectl argo rollouts list rollouts
+kubectl argo rollouts get rollout <r>
+kubectl argo rollouts promote <r>
+kubectl argo rollouts abort <r>
 ```
 
-## Helm commands
+## A.2 helm
 
-```bash
-helm repo add <name> <url>
-helm repo update
-helm search repo <term>
-helm install <release> <chart>
-helm install <release> <chart> --values values.yaml --set image.tag=v1
-helm upgrade --install <release> <chart> --values values.yaml
+```
+helm install <rel> <chart>
+helm install <rel> <chart> -f values.yaml --set foo=bar
+helm upgrade --install <rel> <chart> -f values.yaml
+helm rollback <rel> <revision>
 helm list -A
-helm history <release>
-helm rollback <release> <revision>
-helm uninstall <release>
-helm template ./mychart   # render without installing
+helm status <rel>
+helm get values <rel>
+helm get manifest <rel>
+helm template <chart> -f values.yaml      # render without applying
+helm uninstall <rel>
 ```
 
-## Terraform commands
+## A.3 terraform
 
-```bash
-terraform init
-terraform fmt
-terraform validate
-terraform plan -out=tfplan
-terraform apply tfplan
-terraform apply
+```
+terraform init                            # download providers
+terraform fmt -recursive                  # format files
+terraform validate                        # syntax/refs OK?
+terraform plan -out=tf.plan               # preview, save plan
+terraform apply tf.plan                   # apply saved plan
+terraform apply -auto-approve             # no prompt
 terraform destroy
-terraform output
 terraform state list
-terraform state show <resource>
-terraform state rm <resource>
-terraform import <resource> <id>
-terraform workspace list
-terraform workspace new dev
+terraform state show <addr>
+terraform import <addr> <id>              # bring existing into state
+terraform output                          # show outputs
 ```
 
-## Argo Rollouts commands
+## A.4 az
 
-```bash
-kubectl argo rollouts get rollout <name> -n <ns>
-kubectl argo rollouts get rollout <name> -n <ns> --watch
-kubectl argo rollouts promote <name> -n <ns>
-kubectl argo rollouts abort <name> -n <ns>
-kubectl argo rollouts undo <name> -n <ns>
-kubectl argo rollouts retry rollout <name> -n <ns>
-kubectl argo rollouts dashboard --port 3100
 ```
-
-## Azure CLI
-
-```bash
 az login
-az account list
-az account set --subscription <id>
-az group create -n myrg -l eastus2
-az aks get-credentials -g myrg -n mycluster
-az aks stop -g myrg -n mycluster
-az aks start -g myrg -n mycluster
-az acr login -n myacr
-az acr repository list -n myacr
-az ad sp create-for-rbac --name myapp --role Contributor --scopes /subscriptions/<sub>
-az role assignment list --assignee <id> --all
+az account list -o table
+az account set -s <sub-id>
+
+az group create -n <rg> -l <region>
+az aks get-credentials -g <rg> -n <cluster>
+az acr login -n <reg>
+az acr build -r <reg> -t <reg>/<repo>:<tag> .
+
+az ad sp create-for-rbac --name <name> --role Contributor \
+  --scopes /subscriptions/<id>
 ```
 
-## Docker
+## A.5 docker
 
-```bash
-docker build -t myapp:1.0 .
-docker run -p 8080:80 myapp:1.0
-docker run -d --name web -p 8080:80 myapp:1.0
-docker ps
-docker logs <container>
+```
+docker build -t <name>:<tag> .
+docker run --rm -it <name>:<tag>
 docker exec -it <container> sh
-docker stop <container>
-docker rm <container>
-docker system prune -af
-docker login myacr.azurecr.io
-docker push myacr.azurecr.io/myapp:1.0
+docker logs -f <container>
+docker images
+docker ps -a
+docker system prune -af                   # nuke unused (careful)
 ```
 
-## Git
+## A.6 PromQL one-liners
 
-```bash
-git status
-git add . && git commit -m "msg"
-git pull --rebase origin master
-git push origin <branch>
-git checkout -b feature/x
-git merge main
-git rebase -i HEAD~3
-git revert <commit>
-git log --oneline --graph --all
-git stash / git stash pop
+```
+# request rate per service
+sum by (destination_workload) (rate(istio_requests_total[5m]))
+
+# error rate
+sum(rate(istio_requests_total{response_code=~"5.."}[5m]))
+  / sum(rate(istio_requests_total[5m]))
+
+# p99 latency
+histogram_quantile(0.99,
+  sum by (le) (rate(istio_request_duration_milliseconds_bucket[5m])))
+
+# CPU usage by pod
+sum by (pod) (rate(container_cpu_usage_seconds_total[5m]))
+
+# memory by pod
+sum by (pod) (container_memory_working_set_bytes)
 ```
 
 ---
 
-# Appendix B: Building this PDF/DOCX
+# Appendix B: Building PDF and DOCX
 
-This handbook is markdown. To convert:
-
-## To PDF
-
-```bash
-# Install pandoc + LaTeX
-sudo apt install pandoc texlive-xetex texlive-fonts-extra
-
-# Convert
-pandoc docs/textbook/platform-engineering-handbook.md \
-  -o docs/textbook/platform-engineering-handbook.pdf \
-  --pdf-engine=xelatex \
-  --toc --toc-depth=3 \
-  -V geometry:margin=1in \
-  -V fontsize=11pt \
-  --metadata-file=docs/textbook/platform-engineering-handbook.md
 ```
-
-## To DOCX
-
-```bash
-pandoc docs/textbook/platform-engineering-handbook.md \
-  -o docs/textbook/platform-engineering-handbook.docx \
-  --toc --toc-depth=3 \
-  --reference-doc=docs/textbook/template.docx     # optional template
-```
-
-## Quick install on Ubuntu
-
-```bash
-sudo apt update && sudo apt install -y pandoc texlive-xetex
 cd docs/textbook
-pandoc platform-engineering-handbook.md -o handbook.pdf --pdf-engine=xelatex --toc
-pandoc platform-engineering-handbook.md -o handbook.docx --toc
+make                   # everything
+make handbook          # just the handbook
+make glossary          # just the glossary
+make clean             # remove generated artifacts
 ```
 
-You now have both formats. Read on tablet or print.
+The Makefile uses the `pandoc/latex:latest` Docker image — no local pandoc or LaTeX install needed. PDF generation uses `lualatex` (handles Unicode better than pdflatex but still won't have every emoji glyph; DOCX handles those via Word's font fallback).
+
+If a chapter changes, just re-run `make`. Pandoc rebuilds incrementally.
 
 ---
 
 # Appendix C: Where to Go Next
 
-Topics worth your time after mastering this lab:
+If you've worked through the lab and the chapters, here are the natural next steps, in roughly increasing difficulty.
 
-## Advanced Kubernetes
-- **Cluster API** — manage clusters as Kubernetes objects
-- **Karpenter** (AWS) / **Cluster Autoscaler** — node autoscaling
-- **KEDA** — event-driven autoscaling
-- **OPA Gatekeeper / Kyverno** — policy as code
-- **Crossplane** — provision cloud resources via Kubernetes CRDs
+**Operational next steps**
+- Add a real logging pipeline (Loki + Promtail).
+- Add tracing (Tempo) and wire Istio's Zipkin export.
+- Replace the Postgres StatefulSet with Azure Database for PostgreSQL Flexible Server.
+- Move secrets to Azure Key Vault + External Secrets Operator.
+- Add a NetworkPolicy default-deny on app namespaces.
 
-## Advanced CI/CD
-- **Backstage** — developer portal that wraps your platform
-- **Tekton** — Kubernetes-native pipelines
-- **Spinnaker** — multi-cloud canary deployment platform
-- **Argo Workflows** — DAG-based job orchestration
+**Platform-engineering next steps**
+- Build a self-service Helm library (a single internal chart for "what a service looks like here") and migrate the three-tier app to use it.
+- Add Backstage for service catalog + scaffolding.
+- Wire up cost attribution via Kubecost or Azure Cost Management.
+- Multi-cluster with Cluster API (CAPI) or AKS fleet.
+- Argo Workflows for batch / data jobs.
 
-## Reliability
-- **Velero** — backup and disaster recovery
-- **Litmus / Chaos Mesh** — chaos engineering
-- **Pyrra / Sloth** — SLO management
-- **Robusta / Komodor** — Kubernetes incident response
+**Career next steps**
+- The **CKA** (Certified Kubernetes Administrator) certification is a 2-hour hands-on exam — directly useful for platform roles.
+- The **HashiCorp Terraform Associate** is a multiple-choice exam — easy to add once you've used Terraform daily.
+- The **Azure AZ-104** (admin) and **AZ-400** (DevOps) round out the Azure side.
+- Read *Site Reliability Engineering* (Google), *Database Internals* (Petrov), *Designing Data-Intensive Applications* (Kleppmann). They each rewire how you think about a layer of the stack.
 
-## Security
-- **Trivy / Grype / Snyk** — vulnerability scanning (you have Trivy)
-- **Cosign / Sigstore** — image signing
-- **Falco** — runtime security
-- **Tetragon** — eBPF-based security observability
+**Community**
+- Follow the CNCF landscape (landscape.cncf.io).
+- Watch KubeCon talks on YouTube — start with the "production stories" track.
+- Pick one open-source platform project (ArgoCD, Crossplane, Backstage) and read enough of its source to add a tiny feature or doc fix.
 
-## Cost
-- **OpenCost / Kubecost** — Kubernetes cost visibility
-- **Karpenter** — provisioning the cheapest node SKU
-
----
-
-# End
-
-This handbook covers the full journey from cloud fundamentals through a production-pattern AKS lab to advanced topics for further study.
-
-The lab repo: https://github.com/gkhandale-aziro/azure-platform-lab
-
-Re-read sections you struggle with. Run the commands. Break things on purpose. The work that wins interviews now is practicing the conversation, not building more.
-
-
-
-
-
+Good luck. You've already done the hard part — building something real.
 
