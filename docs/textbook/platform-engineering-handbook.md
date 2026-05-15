@@ -7,7 +7,6 @@ geometry: margin=1in
 fontsize: 11pt
 toc: true
 toc-depth: 3
-numbersections: true
 documentclass: report
 ---
 
@@ -3621,7 +3620,7 @@ Stand up the cluster and the registry, attach them, and verify you can deploy a 
 
 ## 12.3 The AKS module
 
-Key choices we lock in (see [pinned decisions](#pinned-decisions-in-our-lab)):
+Key choices we lock in:
 
 | Choice | Value | Why |
 |---|---|---|
